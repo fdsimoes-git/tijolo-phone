@@ -8,7 +8,7 @@ O firmware é o **TijoloOS**, feito por fases:
 |---|---|---|
 | 1 | Modem: ligar, atender, SMS com acentos, USSD (saldo), toque — pelo Monitor Serial | pronta, testada na placa |
 | 2 | Tela ILI9341 + teclado 3×4 (o 1 e o 3, segurados, fazem as vezes dos botões verde e vermelho): tela inicial, discador, chamadas, SMS recebidos, saldo, liga/desliga | pronta, testada na placa |
-| 3a | Menu, escrever SMS pelo teclado (multitoque), caixa de mensagens na memória do Tijolo (ler, responder, encaminhar, apagar, reenviar) | **este firmware** |
+| 3a | Menu, escrever SMS pelo teclado (multitoque), caixa de mensagens na memória do Tijolo (ler, responder, encaminhar, apagar, reenviar) | pronta, testada na placa |
 | 3b | Agenda de contatos (na memória do Tijolo), histórico de chamadas, despertador | próxima |
 | 4 | Opcionais: modo roteador (compartilhar o 4G por Wi-Fi) e ponte do WhatsApp | |
 
