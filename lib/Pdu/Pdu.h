@@ -340,6 +340,38 @@ inline std::vector<Envio> codificar(const std::string& numero, const std::string
   return saida;
 }
 
+// Quantos SMS o texto ocupa, com o mesmo corte que codificar() faz.
+// Para o contador da tela de escrever.
+struct Contagem {
+  bool gsm = true;     // alfabeto GSM (160 por SMS); false = UCS2, com acentos (70)
+  int partes = 1;
+  int usados = 0;      // septetos (GSM, o "€" vale 2) ou unidades UTF-16 (UCS2)
+  int porParte = 160;  // 160 numa só; 153 por parte num SMS longo (UCS2: 70 e 67)
+};
+inline Contagem contar(const std::string& txt) {
+  Contagem c;
+  std::vector<int> custos;
+  for (size_t i = 0; i < txt.size();) {
+    const auto s = unicodeParaGsm(texto::lerCodepoint(txt, i));
+    if (s.empty()) { c.gsm = false; break; }
+    custos.push_back((int)s.size());
+  }
+  if (c.gsm) {
+    for (int x : custos) c.usados += x;
+    c.porParte = c.usados <= 160 ? 160 : 153;
+    int atual = 0;
+    for (int x : custos) {
+      if (atual + x > c.porParte) { c.partes++; atual = 0; }
+      atual += x;
+    }
+  } else {
+    c.usados = (int)texto::tamanhoSms(txt, false);
+    c.porParte = c.usados <= 70 ? 70 : 67;
+    c.partes = (int)texto::dividir(txt, (size_t)c.porParte, false).size();
+  }
+  return c;
+}
+
 // ============================================================
 //  Montador de SMS longos: junta as partes quando todas chegarem
 // ============================================================
@@ -376,6 +408,14 @@ public:
       _grupos.erase(_grupos.begin() + i);
       return true;
     }
+    return false;
+  }
+
+  // Esta posição do chip já está aqui (uma parte esperando as outras)?
+  bool temIndice(int indice) const {
+    for (const auto& g : _grupos)
+      for (int i : g.indices)
+        if (i == indice) return true;
     return false;
   }
 

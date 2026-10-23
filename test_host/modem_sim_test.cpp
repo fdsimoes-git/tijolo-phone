@@ -465,6 +465,18 @@ int main() {
     }
     CONFERE(junto == std::string(200, 'a'));
   }
+  {
+    // Chega uma chamada enquanto a 1ª parte sai: a 2ª não vai, e o erro diz por quê
+    FakeModem f; Modem m; novoModem(f, m);
+    f.especial = [&](const std::string& c) {
+      if (c.rfind("AT+CMGS=", 0) == 0 && f.quantos("AT+CMGS=") == 1) f.diz("\r\nRING\r\n", 100);
+      return false;
+    };
+    CONFERE(!m.enviarSms("+5511999998888", String(std::string(200, 'a'))));
+    CONFERE(f.quantos("AT+CMGS=") == 1);
+    CONFERE(m.ultimoErro().indexOf("chegou uma chamada") >= 0 && m.ultimoErro().indexOf("1 de 2") >= 0);
+    CONFERE(m.estado() == EstadoChamada::Tocando);
+  }
 
   // ===== 12. listar SMS (com um longo em duas partes) =====
   printf("12. lista de SMS\n");

@@ -63,7 +63,9 @@ int main(int argc, char** argv) {
     // parte perdida: entrega o que chegou depois do prazo
     Montador mo2;
     Mensagem a; decodificar(v[0].hex, a);
+    CONFERE(!mo2.temIndice(1));
     CONFERE(!mo2.adicionar(a, 1, 0, pr));
+    CONFERE(mo2.temIndice(1) && !mo2.temIndice(2));      // a parte espera as outras
     CONFERE(!mo2.expirada(1000, 180000, pr));
     CONFERE(mo2.expirada(200000, 180000, pr));
     CONFERE(pr.incompleta && pr.msg.texto.find("[…]") != std::string::npos);
@@ -142,6 +144,33 @@ int main(int argc, char** argv) {
         for (auto& e : v) o << e.hex << '\t' << e.tamanho << '\t' << bytesParaHex(std::vector<uint8_t>(t.begin(), t.end()))
                            << '\t' << num << '\t' << v.size() << '\n';
       }
+  }
+
+  // Contador da tela de escrever: o mesmo número de partes que codificar()
+  {
+    const char* textos[] = {"", "Oi", "Já cheguei", "[x] {y} €5", "😀"};
+    for (const char* t : textos) {
+      const Contagem c = contar(t);
+      CONFERE(c.partes == (int)codificar("11999998888", t, 1).size());
+    }
+    CONFERE(contar("Oi").gsm && contar("Oi").usados == 2 && contar("Oi").porParte == 160);
+    CONFERE(!contar("ação").gsm && contar("ação").usados == 4 && contar("ação").porParte == 70);
+    CONFERE(contar("€").usados == 2);                         // o euro vale 2 septetos
+    CONFERE(contar("😀").usados == 2);                        // emoji: 2 unidades UTF-16
+    for (int n : {159, 160, 161, 306, 307, 459, 460}) {
+      const std::string t(n, 'a');
+      const Contagem c = contar(t);
+      CONFERE(c.partes == (int)codificar("11999998888", t, 1).size());
+    }
+    CONFERE(contar(std::string(160, 'a')).partes == 1 && contar(std::string(161, 'a')).partes == 2);
+    std::string e;
+    for (int i = 0; i < 77; i++) e += "€";                  // 154 septetos: o € não se parte
+    CONFERE(contar(e).partes == (int)codificar("11999998888", e, 1).size());
+    for (int n : {70, 71, 134, 135}) {
+      std::string t;
+      for (int i = 0; i < n; i++) t += "ç";
+      CONFERE(contar(t).partes == (int)codificar("11999998888", t, 1).size());
+    }
   }
 
   printf("%d verificações, %d falha(s)\n", verificacoes, falhas);

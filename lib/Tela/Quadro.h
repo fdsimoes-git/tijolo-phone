@@ -61,6 +61,11 @@ public:
   // Quebra em linhas de no máximo `larguraMax` (respeita "\n"; corta
   // palavras compridas demais).
   static std::vector<std::string> quebrar(const std::string& s, const Fonte& f, int larguraMax);
+  // Quebra para quem está escrevendo: cada linha é um trecho [inicio, fim)
+  // do texto, sem perder nenhum caractere (os espaços ficam no fim da linha,
+  // mesmo passando um pouco da largura; o "\n" fica entre as linhas).
+  struct Trecho { size_t inicio, fim; };
+  static std::vector<Trecho> quebrarTudo(const std::string& s, const Fonte& f, int larguraMax);
 
   static uint16_t misturar565(uint16_t fundo, uint16_t cor, uint32_t alfa);
 

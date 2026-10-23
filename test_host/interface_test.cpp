@@ -8,10 +8,13 @@
 //
 //  Da raiz do projeto (uma linha só):
 //  g++ -std=c++17 -I lib/Texto -I lib/Tela -I lib/Teclado -I lib/Interface
-//      test_host/interface_test.cpp lib/Tela/Quadro.cpp lib/Tela/Fontes.cpp
-//      lib/Teclado/Teclado.cpp lib/Interface/Interface.cpp -o /tmp/ui && /tmp/ui
+//      -I lib/Caixa -I lib/Escrita -I lib/Pdu test_host/interface_test.cpp
+//      lib/Tela/Quadro.cpp lib/Tela/Fontes.cpp lib/Teclado/Teclado.cpp
+//      lib/Caixa/Caixa.cpp lib/Escrita/Multitoque.cpp lib/Interface/Interface.cpp
+//      -o /tmp/ui && /tmp/ui
 // ============================================================
 #include <stdio.h>
+#include <map>
 #include <string>
 #include <vector>
 #include <sys/stat.h>
@@ -23,6 +26,8 @@ static int falhas = 0, verificacoes = 0;
     verificacoes++;                                                         \
     if (!(cond)) { falhas++; printf("  FALHOU (linha %d): %s\n", __LINE__, #cond); } \
   } while (0)
+
+static uint32_t agora = 1000;              // o relógio dos testes
 
 // ---------- telefone de mentira ----------
 struct TelefoneFalso : Telefone {
@@ -44,12 +49,58 @@ struct TelefoneFalso : Telefone {
     for (int i = 0; i < Teclado::TECLAS; i++) mapaSalvo[i] = m[i];
     salvou = true;
   }
-  std::vector<std::vector<int>> lidas;
-  void mensagemLida(const std::vector<int>& p) override { lidas.push_back(p); }
+  bool smsOk = true;
+  uint32_t atrasoSms = 0;                  // quanto o "modem" demora para enviar (o loop fica parado)
+  bool enviarSms(const std::string& n, const std::string& t) override {
+    pedidos.push_back("sms " + n + " " + t);
+    agora += atrasoSms;
+    return smsOk;
+  }
+  // Como o main: 10 ou 11 dígitos sem o 0 na frente ganham o +55
+  std::string numeroCompleto(const std::string& n) override {
+    bool digitos = !n.empty();
+    for (char c : n) digitos = digitos && c >= '0' && c <= '9';
+    if (digitos && (n.size() == 10 || n.size() == 11) && n[0] != '0') return "+55" + n;
+    return n;
+  }
   bool pediu(const std::string& p) const {
     for (const auto& x : pedidos) if (x == p) return true;
     return false;
   }
+  int quantos(const std::string& comeco) const {
+    int n = 0;
+    for (const auto& x : pedidos) n += x.compare(0, comeco.size(), comeco) == 0;
+    return n;
+  }
+};
+
+// ---------- pasta de mentira para a caixa de mensagens ----------
+struct PastaFalsa : Pasta {
+  std::map<std::string, std::string> arquivos;
+  bool falharEscrita = false;
+  bool listar(std::vector<std::string>& nomes) override {
+    for (auto& a : arquivos) nomes.push_back(a.first);
+    return true;
+  }
+  bool ler(const std::string& n, std::string& c) override {
+    auto it = arquivos.find(n);
+    if (it == arquivos.end()) return false;
+    c = it->second;
+    return true;
+  }
+  bool escrever(const std::string& n, const std::string& c) override {
+    if (falharEscrita) return false;
+    arquivos[n] = c;
+    return true;
+  }
+  bool renomear(const std::string& de, const std::string& para) override {
+    auto it = arquivos.find(de);
+    if (it == arquivos.end()) return false;
+    arquivos[para] = it->second;
+    arquivos.erase(it);
+    return true;
+  }
+  bool apagar(const std::string& n) override { return arquivos.erase(n) > 0; }
 };
 
 // ---------- imagem ----------
@@ -82,15 +133,18 @@ static void salvar(const char* nome) {
 }
 
 // ---------- relógio e teclas ----------
-static uint32_t agora = 1000;
 static Interface ui;
 static TelefoneFalso tel;
+static PastaFalsa pasta;
+static Caixa caixa;
+
+static Interface* u = &ui;                 // a interface que as teclas e o relógio movem
 
 static void passar(uint32_t ms) {          // o loop() da placa, em passos de 10 ms
   for (uint32_t t = 0; t < ms; t += 10) {
     agora += 10;
-    ui.tique(agora);
-    if (ui.precisaDesenhar(agora)) ui.desenhar(quadro, agora);
+    u->tique(agora);
+    if (u->precisaDesenhar(agora)) u->desenhar(quadro, agora);
   }
 }
 static void evento(EventoTecla::Tipo tipo, char k, bool segurada = false) {
@@ -98,7 +152,7 @@ static void evento(EventoTecla::Tipo tipo, char k, bool segurada = false) {
   ev.tipo = tipo;
   ev.tecla = k;
   ev.segurada = segurada;
-  ui.tecla(ev, agora);
+  u->tecla(ev, agora);
   passar(20);
 }
 static void toque(char k) { evento(EventoTecla::Apertou, k); evento(EventoTecla::Soltou, k); }
@@ -109,7 +163,14 @@ static void segura(char k) {
   evento(EventoTecla::Soltou, k, true);
 }
 static void digitar(const char* s) { for (; *s; s++) toque(*s); }
-static void foto(const char* nome) { ui.desenhar(quadro, agora); salvar(nome); }
+// Escrevendo: "_" = espera 1,2 s (a letra pendente fica)
+static void escrever(const char* s) {
+  for (; *s; s++) {
+    if (*s == '_') passar(1200);
+    else toque(*s);
+  }
+}
+static void foto(const char* nome) { u->desenhar(quadro, agora); salvar(nome); }
 
 static Situacao situacaoBoa() {
   Situacao s;
@@ -126,7 +187,9 @@ int main() {
   Interface::desenharLigando(quadro, "Ligando o modem…");
   salvar("00_ligando");
 
+  caixa.begin(pasta);
   ui.begin(tel, 5, nomes, agora);
+  ui.usarCaixa(caixa);
   Situacao s = situacaoBoa();
   ui.situacao(s, agora);
 
@@ -191,35 +254,63 @@ int main() {
   CONFERE(ui.tela() == Tela::Inicio);
   CONFERE(ui.chamadasPerdidas() == 1);
 
-  printf("4. mensagem longa com acentos\n");
+  printf("4. mensagens recebidas: abrem sozinhas e ficam na caixa\n");
   const std::string sms =
       "Oi! Chegou o tijolo? Amanhã às 9h passo aí para vermos a ligação do teclado e da tela. "
       "Não esqueça a bateria 18650 carregada. Também levo o ferro de solda e os cabos. "
       "Se der tempo, montamos a caixa de madeira com a janelinha para a tela. Até amanhã! "
       "PS: o código do portão é 4471.";
-  ui.mensagem("+5511977776666", "26/10/21,18:07:30-12", sms, {4, 5}, agora);
-  CONFERE(ui.tela() == Tela::Mensagem);
+  const uint32_t longa = ui.mensagem("+5511977776666", "26/10/21,18:07:30-12", sms, agora);
+  CONFERE(longa != 0 && ui.tela() == Tela::Ler && ui.lendo() == longa);
+  CONFERE(ui.mensagensNaoLidas() == 1);          // abriu sozinha: só conta como lida quando alguém mexer
   passar(50);
   foto("09_mensagem");
-  toque('8'); toque('8');
-  foto("10_mensagem_rolada");
-  toque(TECLA_VERDE);                           // "Mais": desce uma página
-  toque(TECLA_VERDE);                           // lida
+  toque('8');                                    // uma página para baixo (agora está lida)
   CONFERE(ui.mensagensNaoLidas() == 0);
-  CONFERE(!tel.lidas.empty() && tel.lidas.back() == std::vector<int>({4, 5}));
+  foto("10_mensagem_rolada");
+  toque(TECLA_VERMELHA);
   CONFERE(ui.tela() == Tela::Inicio);
-  ui.mensagem("TIM", "26/10/21,18:09:00-12", "TIM: Sua recarga de R$ 20,00 foi efetuada com sucesso. 🎉", {6}, agora);
-  toque(TECLA_VERMELHA);                         // fecha (lida)
-  ui.mensagem("+5511977776666", "26/10/20,08:00:00-12", "Bom dia ☀️", {7}, agora);
+  // Abriu sozinha e ninguém mexeu: a tela apaga, volta ao início e ela continua nova
+  const uint32_t tim = ui.mensagem("TIM", "26/10/21,18:09:00-12", "TIM: Sua recarga de R$ 20,00 foi efetuada com sucesso. 🎉", agora);
+  CONFERE(ui.tela() == Tela::Ler);
+  passar(31000);
+  CONFERE(ui.tela() == Tela::Inicio && ui.mensagensNaoLidas() == 1);
+  toque('5');                                    // tela apagada: só acende
+  CONFERE(ui.tela() == Tela::Inicio);
+  ui.mensagem("+5511977776666", "26/10/20,08:00:00-12", "Bom dia ☀️", agora);
+  CONFERE(ui.tela() == Tela::Ler);
+  toque(TECLA_VERMELHA);                         // vista e fechada
+  ui.mensagem("+5511977776666", "26/10/21,18:10:00-12", "Outra", agora);
+  CONFERE(ui.tela() == Tela::Ler);
+  const uint32_t maisUma = ui.mensagem("+5521955554444", "26/10/21,18:11:00-12", "Mais uma, e esta é de outra pessoa.", agora);
+  CONFERE(ui.tela() == Tela::Ler && ui.lendo() != maisUma);   // chegou com outra aberta: só o aviso
   ui.aviso("Bateria fraca (10%). Ligue o carregador.", agora);
   foto("10b_aviso");
   toque(TECLA_VERMELHA);
   CONFERE(ui.tela() == Tela::Inicio);
+  CONFERE(ui.mensagensNaoLidas() == 2);          // a da TIM e a "mais uma"
   passar(4500);                                  // o aviso some sozinho
-  ui.mensagem("+5511977776666", "26/10/21,18:10:00-12", "Outra", {8}, agora);
-  toque(TECLA_VERMELHA);
-  passar(10);
   foto("11_inicio_notificacoes");
+  toque(TECLA_VERDE);                            // "Ver" com duas novas: a lista
+  CONFERE(ui.tela() == Tela::Mensagens && ui.selecionada() == maisUma);
+  foto("31_lista");
+  toque('5');                                    // abre (e fica lida)
+  CONFERE(ui.tela() == Tela::Ler && ui.lendo() == maisUma && ui.mensagensNaoLidas() == 1);
+  toque(TECLA_VERMELHA);                         // volta para a lista
+  CONFERE(ui.tela() == Tela::Mensagens && ui.selecionada() == maisUma);
+  toque('8'); toque('8'); toque('8');
+  CONFERE(ui.selecionada() == tim);
+  toque('5');
+  CONFERE(ui.tela() == Tela::Ler && ui.mensagensNaoLidas() == 0);
+  foto("32_ler_tim");
+  toque(TECLA_VERDE);                            // "TIM" não é número: o verde abre as opções
+  CONFERE(ui.tela() == Tela::Opcoes);
+  foto("33_opcoes_tim");
+  toque(TECLA_VERMELHA);
+  CONFERE(ui.tela() == Tela::Ler);
+  toque(TECLA_VERMELHA);
+  toque(TECLA_VERMELHA);                         // lista → início (veio de lá)
+  CONFERE(ui.tela() == Tela::Inicio);
 
   printf("5. USSD (saldo) com menu\n");
   digitar("*222#");
@@ -270,7 +361,10 @@ int main() {
   foto("17b_perdidas");
   toque(TECLA_VERMELHA);                         // fecha e esquece
   CONFERE(ui.chamadasPerdidas() == 0);
-  toque(TECLA_VERDE);                            // nada novo: rediscar
+  toque(TECLA_VERDE);                            // nada novo: o menu
+  CONFERE(ui.tela() == Tela::Menu);
+  toque('8'); toque('8');                        // Escrever, Mensagens, Rediscar
+  toque('5');
   CONFERE(ui.tela() == Tela::Discador);
   CONFERE(ui.digitado() == "11999998888");
   toque(TECLA_VERMELHA);                         // apaga um por um
@@ -409,16 +503,9 @@ int main() {
     ev6(EventoTecla::Soltou, '0');
     for (int i = 0; i < 2; i++) ev6(EventoTecla::Apertou, TECLA_VERMELHA), ev6(EventoTecla::Soltou, TECLA_VERMELHA);
     CONFERE(u6.tela() == Tela::Inicio);
-    // muitas mensagens de uma vez: a aberta fica na tela, e as que saem da
-    // memória NÃO contam como lidas (continuam protegidas no chip)
-    u6.mensagem("111", "", "primeira", {1}, t);
-    CONFERE(u6.tela() == Tela::Mensagem);
-    for (int i = 2; i <= 25; i++) u6.mensagem(std::to_string(i), "", "m" + std::to_string(i), {i}, t);
-    CONFERE(u6.mensagensNaoLidas() == 20);
-    CONFERE(t6.lidas.empty());
-    ev6(EventoTecla::Apertou, TECLA_VERMELHA);
-    CONFERE(!t6.lidas.empty() && t6.lidas.back() == std::vector<int>({1}));   // fechou a aberta
-    ev6(EventoTecla::Soltou, TECLA_VERMELHA);
+    // sem caixa (a memória não montou): a mensagem fica no chip, só o aviso
+    CONFERE(u6.mensagem("111", "", "primeira", t) == 0);
+    CONFERE(u6.tela() == Tela::Inicio && u6.mensagensNaoLidas() == 0);
     // chamada feita pelo Monitor Serial: a tela acompanha
     s6.chamada = 1; s6.numero = "+5511912345678";
     u6.situacao(s6, t);
@@ -705,6 +792,412 @@ int main() {
     }
   }
 
+  // ---------- Fase 3: mensagens ----------
+  PastaFalsa p17;
+  Caixa c17;
+  c17.begin(p17);
+  Interface us;
+  TelefoneFalso ts;
+  us.begin(ts, 5, nomes, agora);
+  us.usarCaixa(c17);
+  us.teclasComoBotoes('1', '3', "");
+  us.situacao(situacaoBoa(), agora);
+  u = &us;
+  passar(50);
+
+  printf("17. escrever e enviar um SMS (multitoque)\n");
+  {
+    toque(TECLA_VERDE);                                   // nada novo: o menu
+    CONFERE(us.tela() == Tela::Menu);
+    foto("34_menu");
+    toque('5');                                           // "Escrever mensagem"
+    CONFERE(us.tela() == Tela::Escrever && us.escrita().vazio());
+    foto("35_escrever_vazio");
+    escrever("666" "444" "1111" "0" "222" "44" "33" "4" "666" "0" "22222" "7777" "0");   // "Oi! Chego às "
+    segura('8');                                          // segurado: o número
+    escrever("441");                                      // "h."
+    passar(1100);
+    CONFERE(us.escrita().texto() == "Oi! Chego às 8h.");
+    foto("36_escrever");
+    toque('#');                                           // # apaga a última letra
+    CONFERE(us.escrita().texto() == "Oi! Chego às 8h");
+    segura('#');                                          // segurado: a palavra
+    CONFERE(us.escrita().texto() == "Oi! Chego às ");
+    segura('8');
+    escrever("441");
+    toque('*');                                           // * troca o modo
+    CONFERE(std::string(us.escrita().nomeModo()) == "abc");
+    toque('*'); toque('*'); toque('*');                   // ABC, 123, Abc
+    CONFERE(std::string(us.escrita().nomeModo()) == "Abc");
+    passar(1100);
+    CONFERE(us.escrita().texto() == "Oi! Chego às 8h.");
+    toque(TECLA_VERDE);                                   // para quem
+    CONFERE(us.tela() == Tela::Para && us.destinatario().empty());
+    foto("37_para_vazio");
+    toque(TECLA_VERDE);                                   // sem número: não envia
+    CONFERE(us.tela() == Tela::Para && ts.quantos("sms ") == 0);
+    digitar("119888877770");
+    toque('#');                                           // apaga o 0 a mais
+    CONFERE(us.destinatario() == "11988887777");
+    foto("38_para");
+    EventoTecla e;
+    e.tipo = EventoTecla::Apertou;
+    e.tecla = TECLA_VERDE;
+    us.tecla(e, agora);
+    CONFERE(us.tela() == Tela::Enviando);
+    us.tique(agora);                                      // ainda não desenhou: não envia
+    CONFERE(ts.quantos("sms ") == 0);
+    foto("39_enviando");
+    us.tique(agora + 10);
+    CONFERE(ts.pediu("sms +5511988887777 Oi! Chego às 8h."));
+    CONFERE(us.tela() == Tela::Enviado);
+    e.tipo = EventoTecla::Soltou;
+    us.tecla(e, agora + 20);
+    passar(30);
+    foto("40_enviada");
+    CONFERE(us.escrita().vazio() && us.destinatario().empty());   // o rascunho já foi
+    CONFERE(c17.total() == 1 && c17.itens()[0].estado == Caixa::Enviada);
+    Caixa::Mensagem m;
+    CONFERE(c17.ler(c17.itens()[0].id, m) && m.numero == "+5511988887777" && m.texto == "Oi! Chego às 8h." &&
+            m.dataHora == "26/10/21,18:05:00");
+    passar(3000);
+    CONFERE(us.tela() == Tela::Inicio);
+  }
+
+  printf("18. envio que falha: fica guardado para tentar de novo\n");
+  {
+    ts.smsOk = false;
+    toque(TECLA_VERDE);
+    toque('5');
+    escrever("8337777833");                               // "Teste"
+    passar(1100);
+    CONFERE(us.escrita().texto() == "Teste");
+    toque(TECLA_VERDE);
+    digitar("190");
+    toque(TECLA_VERDE);
+    CONFERE(us.tela() == Tela::Enviado && ts.pediu("sms 190 Teste"));
+    foto("41_nao_enviada");
+    CONFERE(c17.total() == 2 && c17.itens()[0].estado == Caixa::NaoEnviada);
+    CONFERE(us.escrita().vazio());                        // está guardada na caixa
+    passar(5000);
+    CONFERE(us.tela() == Tela::Enviado);                  // a falha espera alguém ver
+    ts.smsOk = true;
+    toque(TECLA_VERDE);                                   // tentar de novo
+    CONFERE(ts.quantos("sms 190 Teste") == 2 && us.tela() == Tela::Enviado);
+    CONFERE(c17.total() == 2 && c17.itens()[0].estado == Caixa::Enviada);   // trocou de lugar
+    passar(3000);
+    CONFERE(us.tela() == Tela::Inicio);
+    // Falhou e foi fechada: depois, pela caixa, "Editar e enviar"
+    ts.smsOk = false;
+    toque(TECLA_VERDE);
+    toque('5');
+    escrever("666_444");                                  // "Oi"
+    toque(TECLA_VERDE);
+    digitar("190");
+    toque(TECLA_VERDE);
+    toque(TECLA_VERMELHA);                                // "Fechar"
+    CONFERE(us.tela() == Tela::Inicio && c17.total() == 3);
+    const uint32_t falhou = c17.itens()[0].id;
+    toque(TECLA_VERDE);                                   // menu
+    toque('8');                                           // Mensagens
+    toque('5');
+    CONFERE(us.tela() == Tela::Mensagens && us.selecionada() == falhou);
+    foto("42_lista_com_falha");
+    toque('5');
+    CONFERE(us.tela() == Tela::Ler);
+    foto("43_ler_nao_enviada");
+    toque('5');                                           // opções: Tentar de novo, Editar e enviar...
+    toque('8');
+    toque('5');
+    CONFERE(us.tela() == Tela::Escrever && us.escrita().texto() == "Oi" && us.destinatario() == "190");
+    escrever("1");                                        // "Oi."
+    ts.smsOk = true;
+    toque(TECLA_VERDE);
+    toque(TECLA_VERDE);
+    CONFERE(ts.pediu("sms 190 Oi."));
+    CONFERE(c17.total() == 3 && c17.posicao(falhou) < 0);   // a versão nova tomou o lugar
+    passar(3000);
+  }
+
+  printf("19. caixa: ler, responder, apagar\n");
+  {
+    CONFERE(us.tela() == Tela::Inicio);
+    const uint32_t recebida = us.mensagem("+5521955554444", "26/10/21,17:00:00-12", "Vem jantar aqui hoje?", agora);
+    CONFERE(us.tela() == Tela::Ler && us.lendo() == recebida);
+    foto("44_ler");
+    toque(TECLA_VERDE);                                   // responder
+    CONFERE(us.tela() == Tela::Escrever && us.destinatario() == "+5521955554444");
+    CONFERE(us.mensagensNaoLidas() == 0);                 // tocou: está lida
+    escrever("777744461111");                             // "Sim!"
+    passar(1100);
+    CONFERE(us.escrita().texto() == "Sim!");
+    foto("45_responder");
+    toque(TECLA_VERDE);                                   // o número já está lá
+    CONFERE(us.tela() == Tela::Para && us.destinatario() == "+5521955554444");
+    toque(TECLA_VERDE);
+    CONFERE(ts.pediu("sms +5521955554444 Sim!"));
+    passar(3000);
+    toque(TECLA_VERDE);                                   // menu → Mensagens
+    toque('8');
+    toque('5');
+    CONFERE(us.tela() == Tela::Mensagens && c17.total() == 5);
+    foto("46_lista");
+    toque('8');                                           // a recebida
+    CONFERE(us.selecionada() == recebida);
+    toque('5');
+    toque('5');                                           // opções
+    CONFERE(us.tela() == Tela::Opcoes);
+    foto("47_opcoes");
+    toque('8'); toque('8'); toque('8');                   // Responder, Ligar, Encaminhar, Apagar
+    toque('5');
+    CONFERE(us.tela() == Tela::Apagar);
+    foto("48_apagar");
+    toque(TECLA_VERMELHA);                                // cancelar
+    CONFERE(us.tela() == Tela::Ler && c17.total() == 5);
+    toque('5');
+    toque('8'); toque('8'); toque('8');
+    toque('5');
+    const int posicao = c17.posicao(recebida);
+    const uint32_t vizinha = c17.itens()[posicao + 1].id;
+    toque(TECLA_VERDE);                                   // apagar de verdade
+    CONFERE(c17.total() == 4 && c17.posicao(recebida) < 0);
+    CONFERE(us.tela() == Tela::Mensagens && us.selecionada() == vizinha);
+    // Apagada pelo Monitor Serial enquanto estava aberta: a tela volta para a lista
+    toque('5');
+    CONFERE(us.tela() == Tela::Ler);
+    c17.apagar(us.lendo());
+    us.caixaMudou(agora);
+    CONFERE(us.tela() == Tela::Mensagens && c17.total() == 3);
+    // "Ligar" pelas opções
+    toque('2');
+    toque('5');
+    toque('5');
+    toque('2');                                           // já está na primeira
+    toque('8');                                           // Ligar (a enviada: Ligar, Encaminhar, Apagar)
+    toque('2');
+    toque('5');
+    CONFERE(us.tela() == Tela::Chamando);
+    us.desenhar(quadro, agora);
+    us.tique(agora + 1);
+    CONFERE(ts.quantos("ligar ") == 1);
+    us.chamadaEncerrada("", agora);
+    passar(3000);
+  }
+
+  printf("20. rascunho: sair (o texto vai para a caixa) e continuar depois\n");
+  {
+    CONFERE(us.tela() == Tela::Inicio);
+    const size_t antes = c17.total();
+    toque(TECLA_VERDE);
+    toque('5');                                           // Escrever
+    escrever("44_444");                                   // "Hi"
+    passar(1100);
+    toque(TECLA_VERMELHA);                                // sai: vira rascunho na caixa
+    CONFERE(us.tela() == Tela::Menu && us.escrita().vazio());
+    CONFERE(c17.total() == antes + 1 && c17.itens()[0].estado == Caixa::Rascunho);
+    const uint32_t rasc = c17.itens()[0].id;
+    foto("49_menu_rascunho");
+    toque('8');                                           // Escrever, Continuar rascunho, ...
+    toque('5');
+    CONFERE(us.tela() == Tela::Escrever && us.escrita().texto() == "Hi");
+    escrever("0222");                                     // "Hi c"
+    passar(1100);
+    toque(TECLA_VERMELHA);                                // guarda de novo: a versão nova toma o lugar
+    CONFERE(c17.total() == antes + 1 && c17.posicao(rasc) < 0 && c17.itens()[0].estado == Caixa::Rascunho);
+    Caixa::Mensagem mr;
+    CONFERE(c17.ler(c17.itens()[0].id, mr) && mr.texto == "Hi c" && mr.numero.empty());
+    toque('2');
+    toque('5');                                           // "Escrever mensagem" começa do zero
+    CONFERE(us.tela() == Tela::Escrever && us.escrita().vazio());
+    toque(TECLA_VERMELHA);                                // vazio: nada a guardar
+    CONFERE(c17.total() == antes + 1);
+    // Pela lista: abrir o rascunho, continuar, apagar o texto todo e sair: ele sai da caixa
+    toque('8'); toque('8');                               // Mensagens
+    toque('5');
+    CONFERE(us.tela() == Tela::Mensagens && us.selecionada() == c17.itens()[0].id);
+    foto("50_lista_com_rascunho");
+    toque('5');
+    CONFERE(us.tela() == Tela::Ler);
+    foto("51_ler_rascunho");
+    toque(TECLA_VERDE);                                   // "Continuar"
+    CONFERE(us.tela() == Tela::Escrever && us.escrita().texto() == "Hi c");
+    segura('#');
+    segura('#');                                          // apaga as duas palavras
+    CONFERE(us.escrita().vazio());
+    toque(TECLA_VERMELHA);
+    CONFERE(us.tela() == Tela::Mensagens && c17.total() == antes);
+    toque(TECLA_VERMELHA);                                // lista → menu
+    toque('2'); toque('2');
+    toque('5');                                           // Escrever
+    escrever("2");
+    passar(31000);                                        // a tela apaga, mas continua escrevendo
+    CONFERE(us.tela() == Tela::Escrever && us.escrita().texto() == "A");
+    toque('3');                                           // só acende
+    CONFERE(us.escrita().texto() == "A");
+    toque('3');
+    CONFERE(us.escrita().texto() == "Ad");
+  }
+
+  printf("21. tamanho máximo\n");
+  {
+    us.maximoDePartes(1);
+    for (int i = 0; i < 79; i++) { toque('2'); toque('3'); }
+    passar(1100);
+    CONFERE(us.escrita().texto().size() == 160);
+    toque('2');                                           // a 161ª não cabe
+    CONFERE(us.escrita().texto().size() == 160 && us.escrita().recusou());
+    foto("52_tamanho_maximo");
+    toque('#'); toque('#');
+    toque('2'); toque('2'); toque('2'); toque('2');       // a b c, e o á (só 70 com acento) é pulado: à,
+    CONFERE(us.escrita().texto().size() == 160 &&                // que é do alfabeto GSM (160)
+            us.escrita().texto().compare(158, 2, "\xc3\xa0") == 0 && !us.escrita().recusou());
+    us.maximoDePartes(Interface::MAX_PARTES_PADRAO);
+    toque('#');
+    toque('2'); toque('2'); toque('2'); toque('2');       // agora cabe: a b c á
+    passar(1100);
+    CONFERE(us.escrita().texto().size() == 160 && us.escrita().texto().back() == '\xa1');
+    foto("53_escrever_longo");
+  }
+
+  printf("22. limpar as novidades da tela inicial\n");
+  {
+    toque(TECLA_VERMELHA);                                // sai do editor (vira rascunho)
+    us.mensagem("+5511900001111", "", "Me liga quando puder", agora);
+    CONFERE(us.tela() == Tela::Menu && us.mensagensNaoLidas() == 1);   // fora do início: só o aviso
+    toque(TECLA_VERMELHA);
+    us.chamadaPerdida("+5511900001111", agora);
+    passar(7000);
+    CONFERE(us.tela() == Tela::Inicio && us.chamadasPerdidas() == 1);
+    foto("54_inicio_novidades");
+    segura(TECLA_VERMELHA);                               // segurar: desligar (não limpa)
+    CONFERE(us.tela() == Tela::Desligar);
+    toque(TECLA_VERMELHA);
+    CONFERE(us.tela() == Tela::Inicio && us.chamadasPerdidas() == 1);
+    evento(EventoTecla::Apertou, TECLA_VERMELHA);
+    evento(EventoTecla::Soltou, TECLA_VERMELHA);          // "Limpar"
+    CONFERE(us.chamadasPerdidas() == 0 && us.mensagensNaoLidas() == 1);   // continua nova na lista
+    toque(TECLA_VERDE);                                   // sem novidades na tela: o menu
+    CONFERE(us.tela() == Tela::Menu);
+    foto("55_menu_com_nova");
+    toque(TECLA_VERMELHA);
+    us.mensagem("+5511900001111", "", "Oi?", agora);      // uma nova traz o cartão de volta
+    toque(TECLA_VERMELHA);
+    CONFERE(us.tela() == Tela::Inicio && us.mensagensNaoLidas() == 1);
+    toque(TECLA_VERDE);                                   // uma só: abre direto
+    CONFERE(us.tela() == Tela::Ler && us.mensagensNaoLidas() == 0);
+  }
+
+  printf("23. revisão da Fase 3\n");
+  {
+    toque(TECLA_VERMELHA);
+    CONFERE(us.tela() == Tela::Inicio);
+    // Envio demorado (5 s): a tela "Mensagem enviada" conta a partir do fim do envio
+    us.usarRelogio([]() -> uint32_t { return agora; });
+    ts.atrasoSms = 5000;
+    toque(TECLA_VERDE);
+    toque('5');
+    escrever("666");                                      // "O"
+    toque(TECLA_VERDE);
+    digitar("190");
+    toque(TECLA_VERDE);
+    CONFERE(us.tela() == Tela::Enviado && ts.pediu("sms 190 O"));
+    passar(1500);
+    CONFERE(us.tela() == Tela::Enviado);
+    passar(1500);
+    CONFERE(us.tela() == Tela::Inicio);
+    // Falha que demora 40 s: a tela da falha aparece, e acesa
+    ts.smsOk = false;
+    ts.atrasoSms = 40000;
+    toque(TECLA_VERDE);
+    toque('5');
+    escrever("666");
+    toque(TECLA_VERDE);
+    digitar("190");
+    toque(TECLA_VERDE);
+    CONFERE(us.tela() == Tela::Enviado && us.brilho(agora) > 0);
+    passar(200);
+    CONFERE(us.tela() == Tela::Enviado);
+    ts.atrasoSms = 0;
+    ts.smsOk = true;
+    toque(TECLA_VERMELHA);                                // fechar (ela ficou guardada)
+    CONFERE(us.tela() == Tela::Inicio);
+
+    // Chamada chegando antes de o SMS sair: ele não sai no meio da chamada e fica guardado
+    const size_t total0 = c17.total();
+    const int smsAntes = ts.quantos("sms ");
+    toque(TECLA_VERDE);
+    toque('5');
+    escrever("666");
+    toque(TECLA_VERDE);
+    digitar("190");
+    EventoTecla e;
+    e.tipo = EventoTecla::Apertou;
+    e.tecla = TECLA_VERDE;
+    us.tecla(e, agora);                                   // "Enviando…", ainda não desenhada
+    CONFERE(us.tela() == Tela::Enviando);
+    us.chamadaRecebida("+5511977776666", agora);
+    passar(50);
+    CONFERE(us.tela() == Tela::Recebendo && ts.quantos("sms ") == smsAntes);
+    CONFERE(c17.total() == total0 + 1 && c17.itens()[0].estado == Caixa::NaoEnviada && us.escrita().vazio());
+    const uint32_t naoFoi = c17.itens()[0].id;
+    us.chamadaPerdida("+5511977776666", agora);
+    passar(7000);
+    CONFERE(us.tela() == Tela::Inicio && us.ultimoAviso().find("chegou uma chamada") != std::string::npos);
+    evento(EventoTecla::Apertou, TECLA_VERMELHA);
+    evento(EventoTecla::Soltou, TECLA_VERMELHA);          // "Limpar" a chamada perdida
+    CONFERE(us.chamadasPerdidas() == 0);
+
+    // Falhou e nem deu para guardar: o texto fica; tentando de novo e dando certo, ele sai
+    ts.smsOk = false;
+    p17.falharEscrita = true;
+    toque(TECLA_VERDE);
+    toque('5');
+    escrever("666");
+    toque(TECLA_VERDE);
+    digitar("190");
+    toque(TECLA_VERDE);
+    CONFERE(us.tela() == Tela::Enviado && us.escrita().texto() == "O");
+    p17.falharEscrita = false;
+    ts.smsOk = true;
+    toque(TECLA_VERDE);                                   // tentar de novo
+    CONFERE(us.tela() == Tela::Enviado && us.escrita().vazio());
+    passar(3000);
+
+    // Reenviar uma "não enviada" com a memória falhando: a de antes não some
+    toque(TECLA_VERDE);                                   // menu: Escrever, Rascunho, Mensagens...
+    toque('8'); toque('8');
+    toque('5');
+    CONFERE(us.tela() == Tela::Mensagens);
+    for (int i = 0; i < c17.posicao(naoFoi); i++) toque('8');
+    CONFERE(us.selecionada() == naoFoi);
+    toque('5');
+    p17.falharEscrita = true;
+    ts.smsOk = false;
+    toque(TECLA_VERDE);                                   // "Reenviar": falha, e não grava
+    CONFERE(us.tela() == Tela::Enviado && c17.posicao(naoFoi) >= 0);
+    p17.falharEscrita = false;
+    ts.smsOk = true;
+    toque(TECLA_VERDE);                                   // de novo: foi, e ela vira "enviada"
+    CONFERE(c17.posicao(naoFoi) < 0 && c17.itens()[0].estado == Caixa::Enviada);
+    passar(3000);
+
+    // Encaminhar uma mensagem maior que o máximo (7 partes): não envia
+    const std::string longa(1000, 'x');
+    const uint32_t grande = us.mensagem("+5511911112222", "", longa, agora);
+    CONFERE(us.tela() == Tela::Ler && us.lendo() == grande);
+    toque('5');                                           // Responder, Ligar, Encaminhar, Apagar
+    toque('8'); toque('8');
+    toque('5');
+    CONFERE(us.tela() == Tela::Escrever && us.escrita().texto() == longa);
+    toque(TECLA_VERDE);
+    CONFERE(us.tela() == Tela::Escrever && us.ultimoAviso().find("7 partes") != std::string::npos);
+    segura('#');                                          // apaga a "palavra" inteira
+    toque(TECLA_VERMELHA);                                // vazio: volta para a mensagem
+    CONFERE(us.tela() == Tela::Ler);
+    us.usarRelogio(nullptr);
+  }
+  u = &ui;
+
   printf("13. textos\n");
   CONFERE(Interface::formatarNumero("+5511999998888") == "(11) 99999-8888");
   CONFERE(Interface::formatarNumero("1133334444") == "(11) 3333-4444");
@@ -733,6 +1226,35 @@ int main() {
     CONFERE(Quadro::largura("ã", fontes::fonteTexto) > 0);
     CONFERE(Quadro::largura("\xF0\x9F\x8E\x89", fontes::fonteTexto) > 0);   // emoji vira □
     CONFERE(Quadro::largura("\xEF\xB8\x8F", fontes::fonteTexto) == 0);      // seletor de variação: some
+    // Quebra do editor: nenhum caractere se perde (nem os espaços repetidos)
+    const std::string t = "Oi tudo bem  com   você? Este é um teste de quebra de linha bem comprido.";
+    const auto tr = Quadro::quebrarTudo(t, fontes::fonteTexto, 120);
+    std::string junto;
+    bool cabe = true;
+    for (const auto& x : tr) {
+      const std::string l = t.substr(x.inicio, x.fim - x.inicio);
+      junto += l;
+      std::string semEspacoNoFim = l;
+      while (!semEspacoNoFim.empty() && semEspacoNoFim.back() == ' ') semEspacoNoFim.pop_back();
+      cabe = cabe && Quadro::largura(semEspacoNoFim, fontes::fonteTexto) <= 120;
+    }
+    CONFERE(junto == t && tr.size() > 3 && cabe);
+    const std::string t2 = "a\n\nb";
+    const auto tr2 = Quadro::quebrarTudo(t2, fontes::fonteTexto, 200);
+    CONFERE(tr2.size() == 3 && tr2[0].fim == 1 && tr2[1].inicio == tr2[1].fim && tr2[2].inicio == 3);
+    const std::string t3 = "httpsexemplocombrumenderecobemcompridodemais";
+    const auto tr3 = Quadro::quebrarTudo(t3, fontes::fonteTexto, 100);
+    std::string junto3;
+    for (const auto& x : tr3) junto3 += t3.substr(x.inicio, x.fim - x.inicio);
+    CONFERE(tr3.size() > 2 && junto3 == t3);
+    CONFERE(Quadro::quebrarTudo("", fontes::fonteTexto, 100).size() == 1);
+    CONFERE(Interface::explicarErro("+CMS ERROR: 330") == "o chip não tem o número da central de mensagens");
+    CONFERE(Interface::explicarErro("+CMS ERROR: 3300") == "a rede recusou (código 3300)");
+    CONFERE(Interface::explicarErro("+CME ERROR: 30") == "sem rede");
+    CONFERE(Interface::explicarErro("+CME ERROR: SIM not inserted") == "sem chip");
+    CONFERE(Interface::explicarErro("sem resposta (tempo esgotado)") == "sem resposta (tempo esgotado)");
+    CONFERE(Interface::ehNumero("+5511999998888") && Interface::ehNumero("190") && !Interface::ehNumero("TIM") &&
+            !Interface::ehNumero("12") && !Interface::ehNumero("+") && !Interface::ehNumero("*222#"));
   }
 
   printf("\n%d verificações, %d falha(s)\n", verificacoes, falhas);

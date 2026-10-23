@@ -1,16 +1,18 @@
 // ============================================================
-//  Tijolo — Fase 2: tela, teclado e botões
+//  Tijolo — Fase 3: escrever SMS e a caixa de mensagens
 //
-//  O telefone agora funciona sozinho: tela inicial com relógio,
-//  discador, chamadas, SMS recebidos, saldo (USSD) e liga/desliga.
-//  Sem botões: segurar o 1 vale o verde e segurar o 3 vale o vermelho
-//  (config.h). O Monitor Serial continua aceitando todos os comandos da
-//  Fase 1 (digite "ajuda").
+//  O telefone funciona sozinho: tela inicial com relógio, menu,
+//  discador, chamadas, SMS (escrever pelo teclado, enviar, ler, responder),
+//  saldo (USSD) e liga/desliga. Sem botões: segurar o 1 vale o verde e
+//  segurar o 3 vale o vermelho (config.h). O Monitor Serial continua
+//  aceitando os comandos (digite "ajuda").
 //
 //  Quem faz o quê:
 //   - lib/Modem: conversa com o modem (chamadas, SMS, USSD)
 //   - lib/Teclado: lê o teclado 3x4 (e os botões, se houver)
 //   - lib/Interface: decide a tela e o que cada tecla faz
+//   - lib/Escrita: o multitoque (2 = a b c...)
+//   - lib/Caixa: as mensagens guardadas na memória flash (LittleFS)
 //   - lib/Tela: desenha (Quadro) e manda para a tela (TelaIli9341)
 //   - este arquivo: liga tudo, lê o estado do modem de tempos em
 //     tempos e cuida de desligar/ligar o aparelho.
@@ -23,9 +25,12 @@
 #include <esp_memory_utils.h>
 #include <esp_sleep.h>
 #include <algorithm>
+#include <map>
 #include <set>
 #include <vector>
 #include "config.h"
+#include <Caixa.h>
+#include <PastaLittleFS.h>
 #include <Interface.h>
 #include <Medidor.h>
 #include <Modem.h>
@@ -287,76 +292,47 @@ Situacao situacaoAtual() {
 }
 
 // ============================================================
-//  SMS: as não lidas sobrevivem a desligar; o chip não enche
+//  SMS: a caixa de mensagens fica na memória do Tijolo
 // ============================================================
-// Posições no chip de cada mensagem nova ainda não vista (um SMS longo
-// ocupa várias). Ficam guardadas na memória da ESP32.
-std::vector<std::vector<int>> naoLidas;
-
-void salvarNaoLidas() {
-  std::vector<uint8_t> b;
-  for (const auto& m : naoLidas) {
-    b.push_back((uint8_t)m.size());
-    for (int i : m) b.push_back((uint8_t)i);
+// Cada mensagem é um arquivo na partição de dados da flash (LittleFS, ver
+// lib/Caixa). Se o sistema de arquivos não montar, a caixa fica na RAM:
+// funciona, mas some ao desligar, e aí as mensagens também ficam no chip.
+struct PastaNaRam : Pasta {
+  std::map<std::string, std::string> arquivos;
+  bool listar(std::vector<std::string>& nomes) override {
+    for (auto& a : arquivos) nomes.push_back(a.first);
+    return true;
   }
-  if (b.empty()) memoria.remove("naolidas");
-  else memoria.putBytes("naolidas", b.data(), b.size());
-}
-
-void carregarNaoLidas() {
-  naoLidas.clear();
-  const size_t n = memoria.isKey("naolidas") ? memoria.getBytesLength("naolidas") : 0;
-  if (n == 0 || n > 1024) return;
-  std::vector<uint8_t> b(n);
-  memoria.getBytes("naolidas", b.data(), n);
-  for (size_t i = 0; i < n;) {
-    const size_t k = b[i++];
-    if (k == 0 || i + k > n) break;
-    naoLidas.emplace_back(b.begin() + i, b.begin() + i + k);
-    i += k;
+  bool ler(const std::string& n, std::string& c) override {
+    auto it = arquivos.find(n);
+    if (it == arquivos.end()) return false;
+    c = it->second;
+    return true;
   }
-}
-
-void esquecerNaoLida(const std::vector<int>& posicoes) {
-  naoLidas.erase(std::remove(naoLidas.begin(), naoLidas.end(), posicoes), naoLidas.end());
-  salvarNaoLidas();
-}
-
-// "26/10/21,18:05:12-12" → "261021180512" (ordena por data)
-String chaveDaData(const String& d) {
-  String k;
-  for (unsigned i = 0; i < d.length() && k.length() < 12; i++)
-    if (isdigit((unsigned char)d[i])) k += d[i];
-  return k;
-}
-
-bool limparChipPendente = false;
-
-// Chip quase cheio: apaga os SMS já lidos mais antigos, nunca os não
-// lidos nem as partes de um SMS longo que ainda está chegando.
-void limparChip() {
-  int usados = 0, total = 0;
-  if (!modem.ocupacaoSms(usados, total) || total <= 6 || usados < total - 2) return;
-  if (!APAGAR_SMS_ANTIGOS) {
-    ui.aviso("Chip quase cheio de SMS: apague alguns pelo monitor (lista, apagar <n>).", millis());
-    return;
+  bool escrever(const std::string& n, const std::string& c) override { arquivos[n] = c; return true; }
+  bool renomear(const std::string& de, const std::string& para) override {
+    auto it = arquivos.find(de);
+    if (it == arquivos.end()) return false;
+    arquivos[para] = it->second;
+    arquivos.erase(it);
+    return true;
   }
-  std::vector<Sms> lista;
-  if (!modem.listarSms(lista)) return;
-  std::set<int> guardar;
-  for (const auto& m : naoLidas) guardar.insert(m.begin(), m.end());
-  for (const auto& p : montador.pendentes()) guardar.insert(p.indices.begin(), p.indices.end());
-  std::vector<const Sms*> velhas;
-  for (const auto& s : lista)
-    if (!guardar.count(s.indice) && s.estado != "REC UNREAD") velhas.push_back(&s);
-  std::sort(velhas.begin(), velhas.end(),
-            [](const Sms* a, const Sms* b) { return chaveDaData(a->dataHora) < chaveDaData(b->dataHora); });
-  int apagadas = 0;
-  for (const Sms* s : velhas) {
-    if (usados - apagadas <= total - 6) break;
-    if (modem.apagarSms(s->indice)) apagadas++;
-  }
-  if (apagadas) avisar("Chip quase cheio: apaguei " + String(apagadas) + " SMS antigos já lidos.");
+  bool apagar(const std::string& n) override { return arquivos.erase(n) > 0; }
+};
+
+PastaLittleFS pastaFlash;
+PastaNaRam pastaRam;
+Caixa caixa;
+bool caixaNaFlash = false;               // false: a caixa está na RAM (a flash não montou)
+
+// Depois de guardada na caixa, a mensagem sai do chip (que guarda poucas e,
+// cheio, para de receber). Só se a caixa estiver na flash.
+bool podeApagarDoChip() { return APAGAR_SMS_DO_CHIP && caixaNaFlash; }
+
+void apagarDoChip(const std::vector<int>& posicoes) {
+  for (int i : posicoes)
+    if (!modem.apagarSms(i))
+      avisar("Não consegui tirar do chip o SMS da posição " + String(i) + " (" + modem.ultimoErro() + ").");
 }
 
 // ============================================================
@@ -386,7 +362,16 @@ public:
     memoria.putBytes("teclado", m, Teclado::TECLAS);
     avisar("Mapa do teclado guardado.");
   }
-  void mensagemLida(const std::vector<int>& posicoes) override { esquecerNaoLida(posicoes); }
+  bool enviarSms(const std::string& n, const std::string& t) override {
+    const String num = normalizarNumero(String(n.c_str()));
+    avisar("Enviando SMS para " + num + "...");
+    int partes = 0;
+    const bool ok = modem.enviarSms(num, String(t.c_str()), &partes);
+    if (ok) avisar("SMS enviado" + (partes > 1 ? " em " + String(partes) + " partes" : String("")) + ".");
+    else avisar("O SMS não foi: " + modem.ultimoErro());
+    return ok;
+  }
+  std::string numeroCompleto(const std::string& n) override { return normalizarNumero(String(n.c_str())).c_str(); }
 } telefone;
 
 // Acesso aos pinos para o Teclado
@@ -566,8 +551,11 @@ void ajuda() {
     "  atender | desligar     (desligar também recusa uma chamada tocando)\n"
     "  tons <digitos>         teclas durante a ligação, p/ menus: tons 1\n"
     "  sms <numero> <texto>   ex.: sms 11999998888 Olá! Chegou?  (número sem espaços)\n"
-    "  lista                  SMS guardados no chip (os longos aparecem inteiros)\n"
-    "  ler <n> | apagar <n> | apagar tudo\n"
+    "  lista [tudo]           mensagens na memória do Tijolo (recebidas e enviadas)\n"
+    "  ler <n> | apagar <n> | apagar tudo   (n: o número entre [ ] na lista)\n"
+    "  chip                   SMS que estão no chip (normalmente nenhum: vão para a memória)\n"
+    "  chip importar | chip ler <posição> | chip apagar <posição>|tudo\n"
+    "  caixa formatar         apaga a memória das mensagens (só se ela não montar)\n"
     "  ussd <codigo>          saldo e recarga: ussd *222#  (menu: ussd 1)\n"
     "  volume <0-7> | mic <0-7> | vivavoz sim|nao\n"
     "  toque instalar         grava o trrrim no modem (uma vez só)\n"
@@ -602,9 +590,15 @@ void status() {
   Serial.println("Rede:      " + modem.tipoDeRede() + " · " + modem.registro());
   String op = modem.operadora();
   Serial.println("Operadora: " + (op.length() ? op : String("(nenhuma)")));
+  Serial.printf("Mensagens: %u na memória do Tijolo (%u nova(s))", (unsigned)caixa.total(), (unsigned)caixa.novas());
+  if (caixaNaFlash)
+    Serial.printf(" · flash: %u de %u KB usados\n", (unsigned)(PastaLittleFS::usados() / 1024),
+                  (unsigned)(PastaLittleFS::total() / 1024));
+  else
+    Serial.println(" · NA RAM (a flash não montou: some ao desligar)");
   int usados, total;
   if (modem.ocupacaoSms(usados, total))
-    Serial.printf("SMS:       %d de %d posições do chip\n", usados, total);
+    Serial.printf("Chip:      %d de %d posições de SMS ocupadas\n", usados, total);
   const int mv = milivoltsBateria();
   const int pct = porcentagemBateria(mv);
   Serial.printf("Bateria:   %.2f V", mv / 1000.0f);
@@ -652,6 +646,204 @@ void mostrarSms(const Sms& s) {
   String nota = s.total > 1 ? "parte " + String(s.parte) + " de " + String(s.total) : String("");
   mostrarMensagem(paraMensagem(s), String(s.indice), s.estado, nota.c_str());
 }
+
+// ---------- A caixa de mensagens no monitor ----------
+// "26/10/21,18:05:00", como o modem escreve a data (vazio sem a hora da rede)
+std::string dataHoraAgora() {
+  const Situacao s = situacaoAtual();
+  if (!s.horaValida) return "";
+  char b[24];
+  snprintf(b, sizeof b, "%02d/%02d/%02d,%02d:%02d:00", s.ano % 100, s.mes, s.dia, s.hora, s.minuto);
+  return b;
+}
+
+const char* nomeDoEstado(Caixa::Estado e) {
+  switch (e) {
+    case Caixa::Nova: return "NOVA";
+    case Caixa::Lida: return "lida";
+    case Caixa::Enviada: return "enviada";
+    case Caixa::NaoEnviada: return "NÃO ENVIADA";
+    case Caixa::Rascunho: return "rascunho";
+  }
+  return "?";
+}
+
+void mostrarDaCaixa(const Caixa::Mensagem& m, bool inteira) {
+  const bool recebida = m.estado == Caixa::Nova || m.estado == Caixa::Lida;
+  Serial.printf("\n[%lu] %s %s", (unsigned long)m.id, recebida ? "De" : "Para", m.numero.c_str());
+  if (!m.dataHora.empty()) Serial.printf(" · %s", m.dataHora.c_str());
+  Serial.printf(" · %s\n", nomeDoEstado(m.estado));
+  std::string t = m.texto;
+  if (!inteira && t.size() > 80) {             // só o começo (cortado num caractere inteiro)
+    size_t n = 80;
+    while (n > 0 && (((uint8_t)t[n]) & 0xC0) == 0x80) n--;
+    t = t.substr(0, n) + "…";
+  }
+  String linha = t.c_str();
+  linha.replace("\n", "\n    ");
+  Serial.println("    " + linha);
+}
+
+// As últimas 15 (ou todas), da mais antiga para a mais nova: a mais nova
+// fica embaixo, perto de onde se digita
+void listarCaixa(bool tudo) {
+  const auto& itens = caixa.itens();
+  if (itens.empty()) { Serial.println("Nenhuma mensagem na memória do Tijolo."); return; }
+  const size_t mostrar = tudo ? itens.size() : std::min<size_t>(itens.size(), 15);
+  for (size_t i = mostrar; i-- > 0;) {
+    Caixa::Mensagem m;
+    if (caixa.ler(itens[i].id, m)) mostrarDaCaixa(m, false);
+  }
+  Serial.printf("\n%u mensagem(ns), %u nova(s)%s. ler <n> mostra inteira; apagar <n> apaga.\n",
+                (unsigned)itens.size(), (unsigned)caixa.novas(),
+                mostrar < itens.size() ? " (estas são as 15 últimas; lista tudo mostra todas)" : "");
+}
+
+// SMS completo (ou um longo que desistiu de esperar as partes): vai para a
+// caixa como novo, aparece na tela e sai do chip.
+bool jaNaCaixa(const std::string& numero, const std::string& dataHora, const std::string& texto, int quantas);
+
+void entregarSms(const pdu::Mensagem& m, const std::vector<int>& posicoes, const char* nota) {
+  std::string texto = m.texto;
+  if (nota && nota[0]) texto += std::string("\n[") + nota + "]";
+  if (jaNaCaixa(m.numero, m.dataHora, texto, 10)) {     // a mesma de novo (já guardada ao ligar)
+    if (podeApagarDoChip()) apagarDoChip(posicoes);
+    return;
+  }
+  const uint32_t id = ui.mensagem(m.numero, m.dataHora, texto, millis());
+  if (!id) {
+    avisar("A mensagem não coube na memória do Tijolo: ficou no chip (posição " + listaDeIndices(posicoes) + ").");
+    return;
+  }
+  if (podeApagarDoChip()) apagarDoChip(posicoes);
+}
+
+// ---------- SMS que já estavam no chip ----------
+// Ao ligar (ou quando o chip fica pronto) e com "chip importar": os SMS
+// recebidos que estão no chip vão para a caixa e saem dele. Normalmente o
+// chip está vazio; sobram lá os que chegaram com a placa reiniciando (sem
+// o aviso +CMTI) e os que não deu para tirar do chip da outra vez.
+// Na primeira vez com a Fase 3, os que a Fase 2 sabia não lidos (a lista
+// "naolidas") entram como novos e os outros como lidos (já foram vistos).
+bool importarPendente = true;
+uint32_t importarEm = 0;
+
+// Já está na caixa? (guardada, mas não deu para tirar do chip)
+// (só as `quantas` recebidas mais recentes: cada uma é um arquivo para ler)
+bool jaNaCaixa(const std::string& numero, const std::string& dataHora, const std::string& texto, int quantas) {
+  int conferidas = 0;
+  for (const auto& it : caixa.itens()) {
+    if (it.estado != Caixa::Nova && it.estado != Caixa::Lida) continue;
+    if (++conferidas > quantas) break;
+    Caixa::Mensagem c;
+    if (caixa.ler(it.id, c) && c.numero == numero && c.dataHora == dataHora && c.texto == texto) return true;
+  }
+  return false;
+}
+
+// "26/10/21,18:05:12-12" → "261021180512": a ordem das datas
+std::string chaveDaData(const std::string& d) {
+  std::string k;
+  for (char c : d)
+    if (c >= '0' && c <= '9' && k.size() < 12) k += c;
+  return k;
+}
+
+// As posições do chip das mensagens não lidas da Fase 2 ("naolidas": grupos
+// [quantas][posições...])
+std::set<int> lerNaoLidas() {
+  std::set<int> r;
+  const size_t n = memoria.isKey("naolidas") ? memoria.getBytesLength("naolidas") : 0;
+  if (n == 0 || n > 1024) return r;
+  std::vector<uint8_t> b(n);
+  memoria.getBytes("naolidas", b.data(), n);
+  for (size_t i = 0; i < n;) {
+    const size_t k = b[i++];
+    for (size_t j = 0; j < k && i < n; j++) r.insert(b[i++]);
+  }
+  return r;
+}
+
+void gravarNaoLidas(const std::set<int>& posicoes) {
+  std::vector<uint8_t> b;
+  std::vector<int> v(posicoes.begin(), posicoes.end());
+  for (size_t i = 0; i < v.size(); i += 255) {
+    const size_t k = std::min<size_t>(255, v.size() - i);
+    b.push_back((uint8_t)k);
+    for (size_t j = 0; j < k; j++) b.push_back((uint8_t)v[i + j]);
+  }
+  if (!b.empty()) memoria.putBytes("naolidas", b.data(), b.size());
+}
+
+// manual: "chip importar" (importa mesmo com os SMS ficando no chip)
+void importarDoChip(bool manual) {
+  if (!modemOk || !modem.chipPronto()) return;          // fica para quando o chip estiver pronto
+  importarPendente = false;
+  const bool primeiraVez = !memoria.isKey("caixa");
+  // Com os SMS ficando também no chip (APAGAR_SMS_DO_CHIP = false), importar
+  // a cada vez que liga traria de volta os que você apagou da caixa: só na
+  // primeira vez, ou pedindo ("chip importar").
+  if (!podeApagarDoChip() && !primeiraVez && !manual) return;
+  std::vector<Sms> lista;
+  if (!modem.listarSms(lista)) {
+    avisar("Não consegui ler os SMS do chip (" + modem.ultimoErro() + "); tento de novo em 30 s.");
+    importarPendente = true;
+    importarEm = (millis() + 30000) | 1;
+    return;
+  }
+  // Na migração da Fase 2, só as que ninguém viu entram como novas. A lista
+  // do chip acabou de marcar todas como lidas: as não lidas ficam anotadas
+  // antes de importar, para o caso de a placa reiniciar no meio.
+  std::set<int> naoLidas;
+  if (primeiraVez) {
+    naoLidas = lerNaoLidas();
+    const size_t antes = naoLidas.size();
+    for (const auto& s : lista)
+      if (s.estado == "REC UNREAD") naoLidas.insert(s.indice);
+    if (naoLidas.size() != antes) gravarNaoLidas(naoLidas);
+  }
+  // As completas, da mais antiga para a mais nova (a ordem da caixa é a de chegada)
+  std::vector<pdu::Montador::Pronta> prontas;
+  for (const auto& s : lista) {
+    if (s.enviada) continue;                            // guardadas por outro aparelho: ficam no chip
+    if (montador.temIndice(s.indice)) continue;         // já está esperando as outras partes
+    pdu::Montador::Pronta p;
+    if (montador.adicionar(paraMensagem(s), s.indice, millis(), p)) prontas.push_back(p);   // longo: espera o resto
+  }
+  std::stable_sort(prontas.begin(), prontas.end(), [](const pdu::Montador::Pronta& a, const pdu::Montador::Pronta& b) {
+    return chaveDaData(a.msg.dataHora) < chaveDaData(b.msg.dataHora);
+  });
+  int novas = 0, lidas = 0, repetidas = 0, ficaram = 0;
+  for (const auto& p : prontas) {
+    if (jaNaCaixa(p.msg.numero, p.msg.dataHora, p.msg.texto, 30)) {
+      repetidas++;
+    } else {
+      bool nova = true;
+      if (primeiraVez) {
+        nova = false;
+        for (int i : p.indices) nova = nova || naoLidas.count(i) > 0;
+      }
+      if (!caixa.guardar(nova ? Caixa::Nova : Caixa::Lida, p.msg.numero, p.msg.dataHora, p.msg.texto)) {
+        ficaram++;
+        continue;                                       // não coube: fica no chip
+      }
+      (nova ? novas : lidas)++;
+    }
+    if (podeApagarDoChip()) apagarDoChip(p.indices);
+  }
+  if (caixaNaFlash) {
+    memoria.putUChar("caixa", 1);                       // a migração da Fase 2 já foi feita
+    if (memoria.isKey("naolidas")) memoria.remove("naolidas");
+  }
+  if (novas || lidas || repetidas || ficaram) {
+    String r = "SMS do chip para a memória do Tijolo: " + String(novas) + " nova(s), " + String(lidas) + " lida(s)";
+    if (repetidas) r += ", " + String(repetidas) + " que já estava(m) lá";
+    if (ficaram) r += ", " + String(ficaram) + " NÃO couberam (ficaram no chip)";
+    avisar(r + (podeApagarDoChip() ? ". O chip ficou livre." : "."));
+    ui.caixaMudou(millis());
+  }
+}
+
 
 uint32_t telaDeTesteAte = 0;   // enquanto não zera, a interface não desenha
 bool telaApagada = false;      // a luz estava apagada no loop anterior
@@ -1046,42 +1238,91 @@ void executar(String linha) {
     }
     Serial.println("Enviando para " + n + "...");
     int partes = 0;
-    if (modem.enviarSms(n, t, &partes))
-      Serial.printf("Enviado%s.\n", partes > 1 ? (" em " + String(partes) + " partes").c_str() : "");
+    const bool ok = modem.enviarSms(n, t, &partes);
+    if (ok) Serial.printf("Enviado%s.\n", partes > 1 ? (" em " + String(partes) + " partes").c_str() : "");
     else falhou("enviar SMS");
+    // Fica na caixa, como as enviadas pela tela
+    caixa.guardar(ok ? Caixa::Enviada : Caixa::NaoEnviada, n.c_str(), dataHoraAgora(), t.c_str());
+    ui.caixaMudou(millis());
     return;
   }
-  if (cmd == "lista") {
-    std::vector<Sms> lista;
-    if (!modem.listarSms(lista)) { falhou("listar"); return; }
-    if (lista.empty()) { Serial.println("Nenhum SMS no chip."); return; }
-    pdu::Montador juntar;                       // SMS longos aparecem inteiros
-    for (auto& s : lista) {
-      pdu::Montador::Pronta p;
-      if (juntar.adicionar(paraMensagem(s), s.indice, 0, p))
-        mostrarMensagem(p.msg, listaDeIndices(p.indices), s.estado, "");
-    }
-    for (auto& p : juntar.pendentes())
-      mostrarMensagem(p.msg, listaDeIndices(p.indices), "", "incompleto: faltam partes");
-    return;
-  }
+  if (cmd == "lista") { listarCaixa(resto == "tudo"); return; }
   if (cmd == "ler") {
-    Sms s;
-    if (modem.lerSms(resto.toInt(), s)) mostrarSms(s); else falhou("ler");
+    Caixa::Mensagem m;
+    const uint32_t id = (uint32_t)resto.toInt();
+    if (!id || !caixa.ler(id, m)) { Serial.println("Não há a mensagem " + resto + ". Veja a lista."); return; }
+    mostrarDaCaixa(m, true);
+    if (m.estado == Caixa::Nova && caixa.mudar(id, Caixa::Lida)) ui.caixaMudou(millis());
     return;
   }
   if (cmd == "apagar") {
-    bool ok = resto == "tudo" ? modem.apagarTodosSms() : modem.apagarSms(resto.toInt());
-    if (ok) {
-      if (resto == "tudo") naoLidas.clear();
-      else naoLidas.erase(std::remove_if(naoLidas.begin(), naoLidas.end(), [&](const std::vector<int>& m) {
-                            return std::find(m.begin(), m.end(), (int)resto.toInt()) != m.end();
-                          }), naoLidas.end());
-      salvarNaoLidas();
-      Serial.println("Apagado.");
+    if (resto == "tudo") {
+      Serial.printf("Apaguei %u mensagem(ns) da memória do Tijolo.\n", (unsigned)caixa.apagarTodas());
     } else {
-      falhou("apagar");
+      const uint32_t id = (uint32_t)resto.toInt();
+      if (id && caixa.apagar(id)) Serial.println("Apagada.");
+      else Serial.println("Não há a mensagem " + resto + ". Veja a lista.");
     }
+    ui.caixaMudou(millis());
+    return;
+  }
+  if (cmd == "chip") {                          // os SMS que estão no chip (normalmente nenhum)
+    resto.toLowerCase();
+    if (resto.length() == 0) {
+      std::vector<Sms> lista;
+      if (!modem.listarSms(lista)) { falhou("listar"); return; }
+      if (lista.empty()) { Serial.println("Nenhum SMS no chip (as mensagens ficam na memória do Tijolo: lista)."); return; }
+      pdu::Montador juntar;                     // SMS longos aparecem inteiros
+      for (auto& s : lista) {
+        pdu::Montador::Pronta p;
+        if (juntar.adicionar(paraMensagem(s), s.indice, 0, p))
+          mostrarMensagem(p.msg, listaDeIndices(p.indices), s.estado, "");
+      }
+      for (auto& p : juntar.pendentes())
+        mostrarMensagem(p.msg, listaDeIndices(p.indices), "", "incompleto: faltam partes");
+      return;
+    }
+    if (resto.startsWith("ler")) {
+      Sms s;
+      if (modem.lerSms(resto.substring(3).toInt(), s)) mostrarSms(s); else falhou("ler");
+      return;
+    }
+    if (resto.startsWith("apagar")) {
+      String r = resto.substring(6);
+      r.trim();
+      const bool ok = r == "tudo" ? modem.apagarTodosSms() : modem.apagarSms(r.toInt());
+      if (ok) Serial.println("Apagado do chip."); else falhou("apagar");
+      return;
+    }
+    if (resto == "importar") {
+      importarDoChip(true);
+      Serial.println(importarPendente ? "O chip ainda não está pronto." : "Pronto.");
+      return;
+    }
+    Serial.println("Uso: chip | chip ler <posição> | chip apagar <posição>|tudo | chip importar");
+    return;
+  }
+  if (cmd == "caixa") {                         // a memória das mensagens
+    resto.toLowerCase();
+    if (resto == "formatar") {
+      Serial.println("Isto APAGA todas as mensagens da memória do Tijolo (as que estão no chip voltam).\n"
+                     "Para confirmar: caixa formatar sim");
+      return;
+    }
+    if (resto == "formatar sim") {
+      Serial.println("Formatando a memória das mensagens (alguns segundos)...");
+      if (!pastaFlash.formatar() || !caixa.begin(pastaFlash, CAIXA_MAXIMO)) {
+        Serial.println("Não consegui. Confira board_build.partitions = default_16MB.csv no platformio.ini.");
+        return;
+      }
+      caixaNaFlash = true;
+      memoria.remove("caixa");                  // como na primeira vez: os SMS do chip voltam para a caixa
+      Serial.println("Pronto: a memória das mensagens está vazia. Trazendo os SMS do chip...");
+      importarDoChip(true);
+      ui.caixaMudou(millis());
+      return;
+    }
+    Serial.println("Uso: caixa formatar");
     return;
   }
   if (cmd == "ussd") {
@@ -1327,56 +1568,6 @@ void lerConsole() {
 }
 
 // ---------- Eventos do modem: vão para o monitor e para a tela ----------
-void entregarSms(const pdu::Mensagem& m, const std::vector<int>& posicoes, const char* nota) {
-  std::string texto = m.texto;
-  if (nota && nota[0]) texto += std::string("\n[") + nota + "]";
-  naoLidas.push_back(posicoes);
-  // Quem decide quais saem quando passam de 10 é a interface (ela nunca tira
-  // a que está aberta na tela e avisa por mensagemLida()); aqui só um teto.
-  while (naoLidas.size() > 50) naoLidas.erase(naoLidas.begin());   // o chip nem guarda tantas
-  salvarNaoLidas();
-  ui.mensagem(m.numero, m.dataHora, texto, posicoes, millis());
-}
-
-// Depois de ligar: as mensagens que ninguém viu voltam para a tela.
-// Enquanto não der para lê-las (chip com PIN, ainda ocupado), elas ficam
-// guardadas e protegidas, e o Tijolo tenta de novo depois.
-std::vector<std::vector<int>> paraRestaurar;
-uint32_t proximaRestauracao = 0;
-
-bool posicaoVazia() {
-  const String& e = modem.ultimoErro();
-  return e == "posição vazia" || e.indexOf("321") >= 0;    // CMS 321: índice sem mensagem
-}
-
-void restaurarNaoLidas() {
-  if (paraRestaurar.empty() || !modem.chipPronto()) return;
-  std::vector<std::vector<int>> lista;
-  lista.swap(paraRestaurar);
-  for (const auto& posicoes : lista) {
-    pdu::Montador juntar;
-    std::vector<pdu::Montador::Pronta> prontas;
-    bool falhou = false;
-    for (int i : posicoes) {
-      Sms s;
-      if (!modem.lerSms(i, s)) {
-        if (!posicaoVazia()) falhou = true;
-        continue;
-      }
-      pdu::Montador::Pronta p;
-      if (juntar.adicionar(paraMensagem(s), s.indice, 0, p)) prontas.push_back(p);
-    }
-    if (falhou) {                      // fica para depois, inteira
-      paraRestaurar.push_back(posicoes);
-      continue;
-    }
-    esquecerNaoLida(posicoes);         // volta abaixo com as posições que ainda existem
-    for (auto& p : prontas) entregarSms(p.msg, p.indices, "");
-    for (auto& p : juntar.pendentes()) entregarSms(p.msg, p.indices, "faltou uma parte");
-  }
-  proximaRestauracao = millis() + 30000;
-}
-
 void tratarEventos() {
   EventoModem ev;
   while (modem.proximoEvento(ev)) {
@@ -1406,7 +1597,12 @@ void tratarEventos() {
       case EventoModem::SmsNovo: {
         Sms s;
         if (!modem.lerSms(ev.valor, s)) {
-          avisar(">>> SMS novo na posição " + String(ev.valor) + " (ler " + String(ev.valor) + ")");
+          const String& e = modem.ultimoErro();
+          if (e == "posição vazia" || e.indexOf("321") >= 0) break;   // já foi para a caixa (ao ligar)
+          avisar(">>> SMS novo na posição " + String(ev.valor) + ", mas não consegui ler (" + e +
+                 "); tento de novo em 10 s.");
+          importarPendente = true;                // a importação do chip pega ele
+          importarEm = (millis() + 10000) | 1;
           break;
         }
         pdu::Montador::Pronta p;
@@ -1415,7 +1611,6 @@ void tratarEventos() {
           mostrarMensagem(p.msg, listaDeIndices(p.indices), "", "");
           mostrarPrompt();
           entregarSms(p.msg, p.indices, "");
-          limparChipPendente = true;           // no loop, fora de chamada
         } else {
           avisar(">>> Chegou a parte " + String(s.parte) + " de " + String(s.total) + " de um SMS longo de " +
                  s.numero + "; esperando o resto.");
@@ -1425,7 +1620,8 @@ void tratarEventos() {
       case EventoModem::ChipPronto:
         cache.chip = "";
         avisar("Chip pronto.");
-        proximaRestauracao = millis() + 3000;   // as mensagens de antes, logo que der
+        importarPendente = true;                  // os SMS que estiverem no chip (o modem pode ter
+        importarEm = (millis() + 3000) | 1;       // reiniciado e recebido sem avisar), logo que der
         break;
       case EventoModem::ChipPedeSenha:
         cache.chip = "Chip pede PIN";
@@ -1617,20 +1813,35 @@ void setup() {
 
   ui.begin(telefone, volume, NOMES_FIOS, millis());
   ui.brilhoMaximo(brilhoMaximo);
+  // A caixa de mensagens, na partição de dados da flash (na primeira vez,
+  // ela é formatada: uns segundos a mais para ligar)
+  const auto montagem = pastaFlash.begin("/caixa", [] {
+    Serial.println(F("Preparando a memória das mensagens (só na primeira vez; pode levar alguns segundos)..."));
+    if (temTela) {
+      Interface::desenharLigando(quadro, "Preparando a memória das mensagens (só na primeira vez)…");
+      tela.enviar(quadro);
+    }
+  });
+  caixaNaFlash = montagem != PastaLittleFS::Montagem::NaoMontou && caixa.begin(pastaFlash, CAIXA_MAXIMO);
+  if (caixaNaFlash) {
+    Serial.printf("Mensagens na memória do Tijolo: %u (%u nova(s)).\n", (unsigned)caixa.total(), (unsigned)caixa.novas());
+  } else {
+    caixa.begin(pastaRam, CAIXA_MAXIMO);
+    Serial.println(F("A memória das mensagens (LittleFS) não montou, e nada foi apagado. Por enquanto as mensagens\n"
+                     "ficam na RAM e também no chip. Se acontecer sempre: 'caixa formatar' (apaga a memória delas)."));
+  }
+  ui.usarCaixa(caixa);
+  ui.maximoDePartes(SMS_MAXIMO_DE_PARTES);
+  ui.usarRelogio([]() -> uint32_t { return millis(); });
+  if (!caixaNaFlash) ui.aviso("A memória das mensagens não montou: elas ficam no chip. Veja o monitor.", millis());
   // As dicas da tela mostram o 1 e o 3 quando eles fazem as vezes dos botões
   ui.teclasComoBotoes(BOTAO_VERDE < 0 ? TECLA_COMO_VERDE : 0, BOTAO_VERMELHO < 0 ? TECLA_COMO_VERMELHO : 0,
                       ("Para ligar de novo, " + comoLigar() + ".").c_str());
   ui.situacao(situacaoAtual(), millis());
   if (!modemOk) ui.aviso("O modem não respondeu. Veja o Monitor Serial.", millis());
   if (!temMapa || verdeNoBoot) ui.aprenderTeclado(millis());
-  carregarNaoLidas();                   // ficam protegidas desde já
-  paraRestaurar = naoLidas;
-  if (modemOk) {
-    restaurarNaoLidas();
-    limparChip();
-  } else {
-    cache.bateria = porcentagemBateria(milivoltsBateria());
-  }
+  if (modemOk) importarDoChip(false);    // os SMS que estão no chip vão para a caixa
+  else cache.bateria = porcentagemBateria(milivoltsBateria());
 
   if (modemOk) status();
   if (medidor.ativo()) {
@@ -1745,11 +1956,10 @@ void loop() {
 
   // Tarefas demoradas com o SMS: só fora de chamada e sem ninguém digitando.
   const bool folga = modemOk && modem.estado() == EstadoChamada::Livre && millis() - ultimaTecla > 3000;
-  if (folga && limparChipPendente) {
-    limparChipPendente = false;
-    limparChip();
+  if (folga && importarPendente && importarEm && (int32_t)(millis() - importarEm) >= 0) {
+    importarEm = 0;
+    importarDoChip(false);
   }
-  if (folga && !paraRestaurar.empty() && (int32_t)(millis() - proximaRestauracao) >= 0) restaurarNaoLidas();
 
   lerConsole();
 

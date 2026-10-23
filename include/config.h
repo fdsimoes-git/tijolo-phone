@@ -32,10 +32,16 @@ constexpr const char* ARQUIVO_TOQUE = "C:/tijolo.wav";
 constexpr float VOLUME_TOQUE = 0.5f;     // 0.0 a 1.0
 
 // ---------- SMS ----------
+// As mensagens (recebidas e enviadas) ficam na memória do Tijolo, até
+// CAIXA_MAXIMO; cheia, sai a mais antiga já lida.
+constexpr int CAIXA_MAXIMO = 500;
 // O chip guarda poucos SMS (uns 20 a 50) e, cheio, para de receber.
-// true: quando faltam 2 posições, o Tijolo apaga os SMS mais antigos JÁ
-// LIDOS (nunca os não lidos). false: só avisa, e você apaga pelo monitor.
-constexpr bool APAGAR_SMS_ANTIGOS = true;
+// true: depois de guardado na memória, o SMS sai do chip.
+// false: fica também no chip (aí, apague de vez em quando: chip apagar tudo).
+constexpr bool APAGAR_SMS_DO_CHIP = true;
+// SMS longo: até quantas partes (cada parte é cobrada como um SMS).
+// 6 partes = 918 letras sem acento, ou 402 com acento.
+constexpr int SMS_MAXIMO_DE_PARTES = 6;
 
 // ---------- Números ----------
 // Números com 10 ou 11 dígitos sem "+" ganham o +55 na frente

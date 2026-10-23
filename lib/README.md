@@ -13,21 +13,23 @@ sozinho; no código basta `#include <Modem.h>`.
 | `Tela/` | `Quadro`: a imagem da tela na memória, formas e texto com acentos e bordas suaves; `Fontes`: as letras (Inter, geradas por `ferramentas/gerar_fontes.py`); `EstadoTela`: lê o "boletim" que a tela dá de si mesma (RDDST) e classifica a falha, inclusive o painel que para de varrer as linhas (Get_Scanline, 45h); `VigiaTela`: confere a tela pelo boletim, confirma com três leituras espalhadas pelo quadro do 2G, conserta (reenvio, depois RESET), espera cada vez mais quando não adianta e reenvia tudo de minuto em minuto; `TelaIli9341`: manda para a tela as linhas que mudaram e, com o fio MISO, confere o estado dela e conserta na hora (sem o fio, reconfirma às cegas de tempos em tempos) (LovyanGFX, só na placa) | 2 |
 | `Medidor/` | lê o 3V3 da placa (com um resistor no IO2) e a bateria milhares de vezes por segundo, numa tarefa no outro núcleo; guarda mínimo, máximo e média em janelas de 100 ms, para o diagnóstico da tela | 2 |
 | `Memoria/` | `Sentinela`: vigia a PSRAM com um padrão conhecido (lendo direto do chip, por cima do cache) e avisa se ela perder os dados | 2 |
-| `Interface/` | as telas e o que cada tecla faz; conversa com o resto pela classe `Telefone`, sem saber de fios nem de modem | 2 |
+| `Interface/` | as telas e o que cada tecla faz (menu, discador, chamadas, escrever, enviar, a lista de mensagens, ler, opções); conversa com o resto pela classe `Telefone`, sem saber de fios nem de modem | 2 e 3 |
+| `Escrita/` | `Multitoque`: escrever no teclado de telefone (2 = a b c á à â ã ç 2...), com maiúscula no começo da frase, os modos Abc/abc/ABC/123, segurar para o número e apagar letra (inteira, em UTF-8) ou palavra | 3 |
+| `Caixa/` | as mensagens na memória flash: um arquivo por mensagem, o estado no nome (`0000002a.n` = 42, nova), a mais nova primeiro; cheia, sai a mais antiga já lida. Quem mexe nos arquivos é uma `Pasta` (na placa, `PastaLittleFS.h`; nos testes, uma de mentira) | 3 |
 
 Os módulos não leem o `config.h`: recebem pinos e ajustes no `begin()`,
 como no robô de mesa.
 
-Testes no computador (sem placa), da raiz do projeto:
+Testes no computador (sem placa), da raiz do projeto, todos de uma vez:
 
 ```
-g++ -std=c++17 -I lib/Texto -I lib/Toque test_host/texto_test.cpp -o /tmp/t && /tmp/t
-g++ -std=c++17 -I lib/Texto -I lib/Pdu test_host/pdu_test.cpp -o /tmp/pdu && /tmp/pdu
-g++ -std=c++17 -I test_host/shim -I lib/Texto -I lib/Pdu -I lib/Modem test_host/modem_sim_test.cpp lib/Modem/Modem.cpp -o /tmp/sim && /tmp/sim
-g++ -std=c++17 -I lib/Teclado test_host/teclado_test.cpp lib/Teclado/Teclado.cpp -o /tmp/tec && /tmp/tec
-g++ -std=c++17 -I lib/Texto -I lib/Tela -I lib/Teclado -I lib/Interface test_host/interface_test.cpp lib/Tela/Quadro.cpp lib/Tela/Fontes.cpp lib/Teclado/Teclado.cpp lib/Interface/Interface.cpp -o /tmp/ui && /tmp/ui
-g++ -std=c++17 -I lib/Tela -I lib/Medidor -I lib/Memoria test_host/diagnostico_test.cpp -o /tmp/diag && /tmp/diag
-g++ -std=c++17 -I lib/Tela test_host/vigia_test.cpp -o /tmp/vigia && /tmp/vigia
+sh test_host/rodar_todos.sh
+```
+
+Um só, por exemplo a interface (a linha de cada um está no começo do arquivo de teste):
+
+```
+g++ -std=c++17 -I lib/Texto -I lib/Tela -I lib/Teclado -I lib/Interface -I lib/Caixa -I lib/Escrita -I lib/Pdu test_host/interface_test.cpp lib/Tela/Quadro.cpp lib/Tela/Fontes.cpp lib/Teclado/Teclado.cpp lib/Caixa/Caixa.cpp lib/Escrita/Multitoque.cpp lib/Interface/Interface.cpp -o /tmp/ui && /tmp/ui
 ```
 
 O `interface_test` salva cada tela como imagem em `test_host/saida/telas/`.
@@ -45,4 +47,4 @@ Para mudar as letras (outra fonte, outros tamanhos), edite e rode
 `python3 ferramentas/gerar_fontes.py` (precisa do Pillow); ele refaz
 `lib/Tela/Fontes.cpp`.
 
-Próximos: `Agenda/` e `Mensagens/` (Fase 3).
+Próximo: `Agenda/` (Fase 3b), na memória do Tijolo como a `Caixa`.

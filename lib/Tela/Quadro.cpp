@@ -237,6 +237,54 @@ std::string Quadro::caber(const std::string& s, const Fonte& f, int larguraMax) 
   return r + RETICENCIAS;
 }
 
+std::vector<Quadro::Trecho> Quadro::quebrarTudo(const std::string& s, const Fonte& f, int larguraMax) {
+  std::vector<Trecho> linhas;
+  const int32_t max16 = (int32_t)larguraMax * 16;
+  auto avanco = [&](uint32_t cp) -> int32_t {
+    const Glifo* g = _glifo(f, cp);
+    return g ? g->avanco : 0;
+  };
+  size_t inicio = 0;           // começo da linha atual
+  size_t depoisDoEspaco = 0;   // onde dá para quebrar (logo depois do último espaço)
+  bool podeQuebrar = false;
+  int32_t x = 0;               // largura da linha atual, em 1/16 de ponto
+  size_t i = 0;
+  while (i < s.size()) {
+    const size_t aqui = i;
+    const uint32_t cp = texto::lerCodepoint(s, i);
+    if (cp == '\n') {
+      linhas.push_back({inicio, aqui});
+      inicio = i;
+      x = 0;
+      podeQuebrar = false;
+      continue;
+    }
+    const int32_t w = avanco(cp);
+    if (cp != ' ' && x + w > max16 && aqui > inicio) {
+      if (podeQuebrar) {
+        // A palavra desce inteira para a linha de baixo
+        linhas.push_back({inicio, depoisDoEspaco});
+        inicio = depoisDoEspaco;
+        podeQuebrar = false;
+        x = 0;
+        for (size_t k = inicio; k < aqui;) x += avanco(texto::lerCodepoint(s, k));
+      }
+      if (x + w > max16 && aqui > inicio) {   // palavra maior que a linha: corta aqui
+        linhas.push_back({inicio, aqui});
+        inicio = aqui;
+        x = 0;
+      }
+    }
+    x += w;
+    if (cp == ' ') {
+      depoisDoEspaco = i;
+      podeQuebrar = true;
+    }
+  }
+  linhas.push_back({inicio, s.size()});
+  return linhas;
+}
+
 std::vector<std::string> Quadro::quebrar(const std::string& s, const Fonte& f, int larguraMax) {
   std::vector<std::string> linhas;
   size_t ini = 0;

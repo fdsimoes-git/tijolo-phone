@@ -7,8 +7,9 @@ O firmware é o **TijoloOS**, feito por fases:
 | Fase | O que entra | Situação |
 |---|---|---|
 | 1 | Modem: ligar, atender, SMS com acentos, USSD (saldo), toque — pelo Monitor Serial | pronta, testada na placa |
-| 2 | Tela ILI9341 + teclado 3×4 (o 1 e o 3, segurados, fazem as vezes dos botões verde e vermelho): tela inicial, discador, chamadas, SMS recebidos, saldo, liga/desliga | **este projeto** |
-| 3 | Escrever SMS no teclado (T9), agenda, histórico de chamadas, despertador | próxima |
+| 2 | Tela ILI9341 + teclado 3×4 (o 1 e o 3, segurados, fazem as vezes dos botões verde e vermelho): tela inicial, discador, chamadas, SMS recebidos, saldo, liga/desliga | pronta, testada na placa |
+| 3a | Menu, escrever SMS pelo teclado (multitoque), caixa de mensagens na memória do Tijolo (ler, responder, encaminhar, apagar, reenviar) | **este firmware** |
+| 3b | Agenda de contatos (na memória do Tijolo), histórico de chamadas, despertador | próxima |
 | 4 | Opcionais: modo roteador (compartilhar o 4G por Wi-Fi) e ponte do WhatsApp | |
 
 O Monitor Serial continua aceitando todos os comandos da Fase 1.
@@ -69,17 +70,66 @@ As bolinhas verde e vermelha no pé da tela mostram o 1 e o 3: a tecla 1 fica em
 
 Se o teclado for trocado ou religado em outra ordem: segure o 1 enquanto aparece "Ligando o modem…", ou digite `teclado aprender` no monitor.
 
+## Mensagens (Fase 3)
+
+**Menu**: na tela inicial sem novidades, segure o 1. Lá estão *Escrever mensagem*, *Continuar rascunho* (se você saiu no meio de uma), *Mensagens* (recebidas e enviadas) e *Rediscar*. O 2 e o 8 andam, o 5 (ou o 1 segurado) abre, o 3 segurado volta.
+
+**Escrever** é pelo multitoque, como nos celulares antigos: toque a tecla até aparecer a letra; outra tecla, ou 1 segundo parado, confirma (a letra que ainda pode mudar fica sublinhada).
+
+| Tecla | Letras |
+|---|---|
+| 1 | . , ? ! : ; ' " - ( ) @ / + = & % * # $ _ < > 1 |
+| 2 | a b c á à â ã ç |
+| 3 | d e f é ê |
+| 4 | g h i í |
+| 5 | j k l |
+| 6 | m n o ó ô õ |
+| 7 | p q r s |
+| 8 | t u v ú |
+| 9 | w x y z |
+| 0 | espaço |
+| * | troca o modo: **Abc** (maiúscula no começo de cada frase) → abc → ABC → 123 (o modo aparece no canto de cima) |
+| # | apaga a última letra; segurado, a última palavra |
+
+- Segurar uma tecla de letra dá o número dela. O 1 e o 3 não: segurados, eles são o verde e o vermelho (para eles, use o modo 123).
+- Embaixo do texto aparece quanto já foi e quanto cabe: 160 letras por SMS sem acento; com qualquer acento ou ç, a mensagem inteira vai em UCS2 e cabem 70. Passando disso, ela vai em partes (até 6, `SMS_MAXIMO_DE_PARTES` no `config.h`), e cada parte é cobrada como um SMS.
+- Segure o 1 para escolher o destinatário (digite o número; o # apaga) e segure o 1 de novo para enviar. A tela mostra "Enviando…" e depois "Mensagem enviada", ou o motivo da falha (sem rede, sem crédito...): segure o 1 para tentar de novo. A que não foi fica guardada, com um "!" na lista.
+- Segurar o 3 sai do texto sem perder nada: ele vira o rascunho do menu. Escrevendo, a tela apaga mas não sai do lugar.
+
+**Recebidas**: com o Tijolo na tela inicial, a mensagem nova abre sozinha; ela só conta como lida quando alguém toca numa tecla (se ninguém mexer, a tela apaga e ela continua nova). Na tela inicial fica o cartão das novidades: segure o 1 para ver (uma mensagem nova abre direto; várias, a lista) ou segure o 3 um pouco, menos de 1,6 s, para limpar a tela (as mensagens continuam marcadas como novas na lista).
+
+**Lendo**: o 2 e o 8 rolam o texto, o 1 segurado responde, o 5 abre as opções (responder, ligar, encaminhar, apagar; numa que não foi enviada: tentar de novo, editar e enviar) e o 3 segurado volta.
+
+**Onde elas ficam**: na memória flash do Tijolo (a partição de dados de 3,4 MB, com o sistema de arquivos LittleFS), até 500 mensagens (`CAIXA_MAXIMO`); cheia, sai a mais antiga já lida. Depois de guardada, a mensagem sai do chip, que guarda poucas e, cheio, para de receber (`APAGAR_SMS_DO_CHIP` no `config.h`). Gravar um firmware novo não apaga as mensagens (só o "Erase Flash" do PlatformIO apagaria).
+
+**Vindo da Fase 2**: no primeiro liga com a Fase 3, as mensagens que estavam no chip vão para a memória do Tijolo: as que você ainda não tinha visto entram como novas, as outras como lidas. O monitor conta quantas foram.
+
+### Roteiro de teste da Fase 3 (uns 15 minutos)
+
+1. **Gravar e ligar** com o monitor aberto. Na primeira vez aparece "Preparando a memória das mensagens" e depois a contagem: `SMS do chip para a memória do Tijolo: ...` e `Mensagens na memória do Tijolo: N`. `status` mostra a memória usada e `Chip: 0 de ... posições` (o chip esvaziou).
+2. **Receber**: mande um SMS de outro celular com o Tijolo na tela inicial. Ele abre sozinho; toque o 8 (conta como lida) e segure o 3. No monitor, `lista` mostra a mensagem e `chip` diz que o chip está vazio.
+3. **Nova sem ninguém ver**: mande outra e não toque em nada. A tela apaga em 30 s e volta para o início com o cartão "1 mensagem nova". Segure o 1: ela abre.
+4. **Escrever**: tela inicial → segure o 1 (Menu) → 5 (Escrever mensagem). "Oi! Tudo bem?" é 666 444 1111 0 8, *espere 1 s* (o u está na mesma tecla do T), 88 3 666 0 22 33 6 111. Teste um acento (2222 = á), o * (modo) e o # (apaga; segurado, a palavra).
+5. **Enviar**: segure o 1, digite o número do outro celular, segure o 1. "Enviando…" e depois "Mensagem enviada". Confira se chegou certo, com os acentos.
+6. **Responder**: abra a mensagem recebida (Menu → Mensagens), segure o 1 (Responder), escreva e envie.
+7. **Falha**: tire a antena (ou `radio desligar` no monitor), envie uma mensagem: aparece "Não foi possível enviar" e o motivo. Volte a antena (`radio ligar`), segure o 1 (Tentar de novo).
+8. **Rascunho**: comece uma mensagem, segure o 3 (sai) e veja "Continuar rascunho" no Menu.
+9. **Desligar e ligar** (segure o 3 na tela inicial): as mensagens continuam lá, nas mesmas condições (novas e lidas).
+
+Se algo der errado, mande o que o monitor mostrou (e `lista` e `chip`).
+
 ## O que cada tecla faz
 
 | Tecla | Função |
 |---|---|
-| 1 segurado (0,8 s) = verde | liga, atende, abre a mensagem ou a chamada perdida; na tela inicial sem novidades, repete o último número |
-| 3 segurado (0,8 s) = vermelho | encerra ou recusa, apaga o último dígito, volta |
+| 1 segurado (0,8 s) = verde | liga, atende; na tela inicial, "Ver" as novidades ou abre o menu; nas listas, abre; escrevendo, envia |
+| 3 segurado (0,8 s) = vermelho | encerra ou recusa, apaga o último dígito do discador, volta; na tela inicial com novidades, limpa a tela |
 | 3 segurado mais (1,6 s) | apaga o número inteiro e, na tela inicial, pergunta se quer desligar o Tijolo |
 | 1 e 3 tocados rápido | os números 1 e 3 (eles aparecem quando a tecla sobe) |
 | 0 segurado | "+" no começo do número |
 | * ou # segurado | durante a ligação, baixa ou sobe o volume (apertados rápido, são tons) |
-| 2 e 8 | sobem e descem o texto de mensagens longas |
+| 2 e 8 | andam nas listas e rolam o texto das mensagens |
+| 5 | abre o que está selecionado; lendo uma mensagem, as opções |
 | `*222#` + verde | códigos que terminam em # vão para a operadora (saldo, recarga, menus) |
 | `*#06#` | mostra o IMEI |
 
@@ -87,7 +137,7 @@ A tela escurece depois de 15 s sem uso e apaga em 30 s; a primeira tecla depois 
 
 **Desligado pela tecla 3**, o Tijolo fica em sono profundo (ESP32 e tela em repouso, modem desligado) e gasta muito pouco. Para acordar, um dos dois fios da tecla 3 precisa estar num pino que acorda a ESP32 (IO15, IO16 ou IO21; o outro fio fica preso em nível baixo durante o sono). Se não estiver, o Tijolo dorme um sono mais leve, que gasta perto de 1 mA (uma 18650 dura meses assim); trocar dois fios do teclado de lugar e configurar o teclado de novo resolve. Para guardar por muitos dias, use a chave. Com a bateria em 2% por um minuto, ele se desliga sozinho.
 
-**SMS**: as mensagens novas aparecem na tela e ficam no chip. As que você ainda não viu voltam para a tela depois de desligar e ligar. O chip guarda poucos SMS (uns 20 a 50) e, cheio, para de receber: quando faltam 2 posições, o Tijolo apaga sozinho os SMS mais antigos **já lidos** (nunca os não lidos). Para só avisar, ponha `APAGAR_SMS_ANTIGOS = false` no `config.h`. A caixa de entrada para reler e apagar mensagens vem na Fase 3.
+**SMS**: veja [Mensagens (Fase 3)](#mensagens-fase-3). Escrever é com as teclas de letra; as mensagens ficam na memória do Tijolo e saem do chip.
 
 **Saldo e menus da operadora** (USSD): a resposta leva alguns segundos; enquanto isso o telefone continua funcionando e segurar o 3 cancela. Sem resposta em 25 s, aparece "sem resposta da operadora".
 
@@ -95,13 +145,16 @@ A tela escurece depois de 15 s sem uso e apaga em 30 s; a primeira tecla depois 
 
 | Comando | O que faz |
 |---|---|
-| `status` | chip, sinal, rede, operadora, SMS no chip, bateria, hora, tela e teclado |
+| `status` | chip, sinal, rede, operadora, mensagens (na memória e no chip), bateria, hora, tela e teclado |
 | `ligar <número>` | liga; aceita `11 99999-8888`, `+55...`, `190`, `*144` |
 | `atender` / `desligar` | `desligar` também recusa uma chamada tocando, e sem chamada solta alguma que tenha ficado presa |
 | `tons <dígitos>` | teclas durante a ligação, para menus de atendimento (`tons 1`) |
-| `sms <número> <texto>` | número sem espaços; com acentos e emoji; texto longo vai em partes (até 15) |
-| `lista` / `ler <n>` | SMS guardados no chip; os longos aparecem inteiros, com as posições de cada parte (`[4,5]`) |
-| `apagar <n>` / `apagar tudo` | apaga do chip (o chip guarda poucos, uns 20 a 50); num SMS longo, apague cada posição |
+| `sms <número> <texto>` | número sem espaços; com acentos e emoji; texto longo vai em partes (até 15); fica na caixa, como as enviadas pela tela |
+| `lista` / `lista tudo` | as mensagens da memória do Tijolo, recebidas e enviadas (as 15 últimas, ou todas), com o número de cada uma (`[12]`) |
+| `ler <n>` / `apagar <n>` / `apagar tudo` | mostra inteira (e marca como lida) ou apaga da memória do Tijolo |
+| `chip` | os SMS que estão no chip (normalmente nenhum); os longos aparecem inteiros, com as posições de cada parte (`[4,5]`) |
+| `chip importar` / `chip ler <posição>` / `chip apagar <posição>` / `chip apagar tudo` | leva os SMS do chip para a memória do Tijolo; lê ou apaga direto no chip |
+| `caixa formatar` | apaga a memória das mensagens e começa do zero (pede confirmação); só para quando ela não monta |
 | `ussd <código>` | saldo, recarga, menus da operadora; responda a um menu com `ussd 1` |
 | `volume <0-7>` / `mic <0-7>` | alto-falante e microfone (o volume fica guardado) |
 | `vivavoz sim/nao` | perfil de áudio do modem: viva-voz (bancada) ou fone no ouvido |
@@ -138,7 +191,9 @@ A tela escurece depois de 15 s sem uso e apaga em 30 s; a primeira tecla depois 
 - **A ligação não completa, mas SMS funciona**: o A7670SA faz voz pelo 4G (VoLTE) ou caindo para o 2G. `at AT+CNMP?` deve responder `2` (automático); se não, `at AT+CNMP=2`.
 - **Ligação muda**: confira o cabo no `SPEK`, `volume 7` e `vivavoz sim`.
 - **Microfonia em viva-voz**: baixe `volume` e `mic`.
-- **SMS deixou de chegar**: o chip pode estar cheio; veja em `status`. Com `APAGAR_SMS_ANTIGOS = true` o Tijolo libera espaço sozinho; senão, `lista` e `apagar <n>`.
+- **SMS deixou de chegar**: o chip pode estar cheio; veja em `status`. Com `APAGAR_SMS_DO_CHIP = true` (o padrão) ele se esvazia sozinho; `chip importar` leva o que estiver lá para a memória do Tijolo e `chip apagar tudo` esvazia.
+- **"A memória das mensagens não montou"**: a partição de dados tem algo que o LittleFS não entende (de outro firmware, ou uma leitura ruim numa queda de tensão). O Tijolo **não apaga nada sozinho**: as mensagens funcionam, mas ficam também no chip e as novas somem da memória ao desligar. Se acontecer toda vez que liga, `caixa formatar` no monitor apaga a memória das mensagens e começa do zero (as que estão no chip voltam). Confira também `board_build.partitions = default_16MB.csv` no `platformio.ini`.
+- **"Não foi possível enviar"**: o motivo aparece embaixo. "Falta crédito?" é o que as operadoras respondem no pré-pago sem saldo; com "o chip não tem o número da central de mensagens", confira com `at AT+CSCA?`, que deve mostrar o número da central da operadora.
 - **USSD responde ERRO**: alguns firmwares do modem recusam USSD com o VoLTE (IMS) ligado. Mande o que aparece com `log sim` antes de mudar qualquer configuração.
 
 **Tela, teclado e botões**
@@ -317,6 +372,8 @@ Se o modem reiniciar sozinho (bateria fraca, pico de corrente), ele esquece a co
 - `lib/Tela/`: tudo é desenhado num **quadro** na memória (240×320, 16 bits por ponto, 150 KB na RAM interna) e só as linhas que mudaram vão para a tela, pela LovyanGFX. As letras são da fonte **Inter**, já desenhadas com 16 tons de cinza (bordas suaves) e com os acentos do português; quem gera é `ferramentas/gerar_fontes.py`.
 - `lib/Tela/EstadoTela.h`, `lib/Tela/VigiaTela.h` e `lib/Medidor/`: o diagnóstico da tela branca. O ILI9341 responde ao comando RDDST com 32 bits sobre si mesmo (acordada? imagem ligada? conversor interno ligado? formato, orientação); comparando com o que foi configurado, o Tijolo sabe se ela se perdeu e de que jeito. O Medidor lê o 3V3 e a bateria numa tarefa no outro núcleo da ESP32.
 - `lib/Interface/`: as telas e o que cada tecla faz em cada uma. Não sabe nada de fios nem de modem: pede "ligue para tal número" a uma classe `Telefone`, que o `main.cpp` implementa com o modem de verdade.
+- `lib/Escrita/`: o multitoque (cada tecla, várias letras; a mesma tecla de novo em menos de 1 s troca a letra), com os acentos do português, os modos Abc/abc/ABC/123 e o apagar letra a letra (os acentos ocupam 2 bytes em UTF-8).
+- `lib/Caixa/`: as mensagens, um arquivo pequeno por mensagem na partição de dados da flash (LittleFS). O estado (nova, lida, enviada, não enviada) está no nome do arquivo (`0000002a.n`), então marcar como lida é só renomear: se a energia cair no meio, fica o nome velho ou o novo, nunca meio arquivo.
 - `src/main.cpp`: liga tudo; a cada poucos segundos lê sinal, rede, operadora, bateria e hora (uma consulta por vez, nunca enquanto alguém digita) e cuida do sono profundo: um dos fios da tecla 3 (ou o botão vermelho) acorda a ESP32.
 
 ### Testes no computador (sem placa)
@@ -325,19 +382,19 @@ Se o modem reiniciar sozinho (bateria fraca, pico de corrente), ele esquece a co
 - `pdu_test`: montagem e leitura dos SMS. Também conferido contra uma biblioteca Python independente (`python-gsmmodem-new`, scripts em `test_host/pdu_referencia/`).
 - `modem_sim_test`: o `lib/Modem` contra um A7670 de mentira (chamadas, SMS, USSD, PIN, arquivo, modem que reinicia sozinho, IMEI, desligar, troca de 4G para 2G).
 - `teclado_test`: o teclado com os 7 fios embaralhados, contatos tremendo, duas teclas juntas, botões e o 1 e o 3 segurados no lugar deles.
-- `interface_test`: as telas com um telefone de mentira; cada tela vira uma imagem em `test_host/saida/telas/`. Também liga um Teclado de verdade (com fios de mentira) à interface: ligar, atender, encerrar e desligar só com o 1 e o 3.
+- `interface_test`: as telas com um telefone de mentira; cada tela vira uma imagem em `test_host/saida/telas/`. Também liga um Teclado de verdade (com fios de mentira) à interface: ligar, atender, encerrar e desligar só com o 1 e o 3. Na Fase 3: escrever pelo multitoque, enviar, falhar e tentar de novo, a lista, responder, apagar, o rascunho e o tamanho máximo.
+- `caixa_test`: a caixa de mensagens com uma pasta de mentira (guardar, marcar, apagar, religar, caixa cheia, falhas da memória).
+- `multitoque_test`: as letras, os acentos, as maiúsculas no começo da frase, os modos, segurar para o número, apagar e o limite.
 - `diagnostico_test`: a leitura do estado da tela (cada tipo de falha) e as janelas de tensão do Medidor.
 - `vigia_test`: a vigia da tela contra uma tela de mentira: ruído de rádio na leitura (aleatório e o pior caso do 2G, de 1 a 4 janelas por quadro, 30 min cada), falhas que o reenvio conserta, que só o RESET conserta, que não se consertam (espera crescente, 6 horas), fio MISO solto e voltando, ruído no meio de um conserto, rede de segurança e relógio dando a volta.
 
+Todos de uma vez (precisa só do g++), da raiz do projeto:
+
 ```
-g++ -std=c++17 -I lib/Texto -I lib/Toque test_host/texto_test.cpp -o /tmp/t && /tmp/t
-g++ -std=c++17 -I lib/Texto -I lib/Pdu test_host/pdu_test.cpp -o /tmp/pdu && /tmp/pdu
-g++ -std=c++17 -I test_host/shim -I lib/Texto -I lib/Pdu -I lib/Modem test_host/modem_sim_test.cpp lib/Modem/Modem.cpp -o /tmp/sim && /tmp/sim
-g++ -std=c++17 -I lib/Teclado test_host/teclado_test.cpp lib/Teclado/Teclado.cpp -o /tmp/tec && /tmp/tec
-g++ -std=c++17 -I lib/Texto -I lib/Tela -I lib/Teclado -I lib/Interface test_host/interface_test.cpp lib/Tela/Quadro.cpp lib/Tela/Fontes.cpp lib/Teclado/Teclado.cpp lib/Interface/Interface.cpp -o /tmp/ui && /tmp/ui
-g++ -std=c++17 -I lib/Tela -I lib/Medidor -I lib/Memoria test_host/diagnostico_test.cpp -o /tmp/diag && /tmp/diag
-g++ -std=c++17 -I lib/Tela test_host/vigia_test.cpp -o /tmp/vigia && /tmp/vigia
+sh test_host/rodar_todos.sh
 ```
+
+Cada linha de compilação está no começo do arquivo de teste e no `test_host/rodar_todos.sh`.
 
 ## WhatsApp e Uber
 

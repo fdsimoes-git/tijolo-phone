@@ -875,7 +875,15 @@ bool Modem::enviarSms(const String& numero, const String& txt, int* partes) {
   if (envios.size() > 15) { _erro = "texto longo demais (máximo 15 partes)"; return false; }
   if (partes) *partes = (int)envios.size();
 
-  for (auto& e : envios) {
+  for (size_t i = 0; i < envios.size(); i++) {
+    // Chegou uma chamada no meio de um SMS longo: para aqui, e o telefone
+    // fica livre para atender (cada parte pode levar até 60 s)
+    if (_estado == EstadoChamada::Tocando) {
+      _erro = "chegou uma chamada no meio do envio (" + String((unsigned)i) + " de " +
+              String((unsigned)envios.size()) + " partes foram)";
+      return false;
+    }
+    const auto& e = envios[i];
     String cmd = "AT+CMGS=" + String(e.tamanho);
     _drenar();
     _ultimoComando = cmd;
