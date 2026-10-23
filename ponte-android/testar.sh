@@ -1,6 +1,7 @@
 #!/bin/sh
 # Testa a lógica da ponte no computador, sem Android: o formato das SMS,
-# a limpeza do texto, os números das conversas e o que é mensagem nova.
+# a limpeza do texto, os números das conversas, o que é mensagem nova e a
+# caixa de saída das SMS.
 #   sh testar.sh
 set -eu
 cd "$(dirname "$0")"
@@ -9,7 +10,7 @@ rm -rf "$saida"
 mkdir -p "$saida"
 p=src/br/tijolo/ponte
 javac -encoding UTF-8 -d "$saida" \
-  $p/Protocolo.java $p/Texto.java $p/Conversas.java $p/Novidades.java \
+  $p/Protocolo.java $p/Texto.java $p/Conversas.java $p/Novidades.java $p/Saida.java \
   teste/br/tijolo/ponte/Testes.java
 java -Dfile.encoding=UTF-8 -Dstdout.encoding=UTF-8 -cp "$saida" br.tijolo.ponte.Testes
 

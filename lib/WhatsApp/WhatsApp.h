@@ -6,19 +6,23 @@
 //  dessas SMS (o mesmo de ponte-android/src/br/tijolo/ponte/Protocolo.java):
 //
 //  Ponte → Tijolo:
-//    "WA#7 Maria\nChego às 8"      mensagem da conversa 7 (num grupo, uma
+//    "WA#7xk Maria\nChego às 8"    mensagem da conversa 7 (num grupo, uma
 //                                  linha "Autor: texto" por mensagem)
-//    "WA? #3 Maria\n#7 Família"    as conversas recentes (resposta ao "WA?")
+//    "WA? #3ab Maria\n#7xk Família"  as conversas recentes (resposta ao "WA?")
 //    "WA! texto"                   aviso da ponte
 //  Tijolo → Ponte:
-//    "WA#7 texto"                  responder na conversa 7
+//    "WA#7xk texto"                responder na conversa 7
 //    "WA?"  "WA-"  "WA+"           a lista; pausar e retomar tudo
-//    "WA-7"  "WA+7"                silenciar e reativar a conversa 7
+//    "WA-7xk"  "WA+7xk"            silenciar e reativar a conversa 7
+//
+//  As duas letras depois do número são o código da conversa: se o número
+//  passar a ser de outra conversa na ponte, o código não bate e a ponte
+//  recusa a resposta (em vez de mandar para a pessoa errada).
 //
 //  Na caixa do Tijolo, a mensagem do WhatsApp fica com o "número"
-//  "WA#7 Maria" (o número da conversa na ponte e o nome); a própria ponte
-//  é "WA". Responder a "WA#7 Maria" manda "WA#7 texto" para o número da
-//  ponte (quem troca o endereço pelo número é o main.cpp).
+//  "WA#7xk Maria" (a conversa, o código e o nome); a própria ponte é "WA".
+//  Responder a "WA#7xk Maria" manda "WA#7xk texto" para o número da ponte
+//  (quem troca o endereço pelo número é o main.cpp).
 //
 //  Não depende do Arduino: os testes rodam no computador.
 // ============================================================
@@ -32,27 +36,29 @@ extern const char* const PAUSAR;    // "WA-"
 extern const char* const RETOMAR;   // "WA+"
 extern const char* const LISTA;     // "WA?"
 
-bool ehEndereco(const std::string& numero);    // "WA" ou "WA#7 Maria"
-bool ehConversa(const std::string& numero);    // "WA#7 Maria" (ou "WA#7")
+bool ehEndereco(const std::string& numero);    // "WA" ou "WA#7xk Maria"
+bool ehConversa(const std::string& numero);    // "WA#7xk Maria" (ou "WA#7xk", "WA#7")
 int conversa(const std::string& numero);       // 7 (0 se não é conversa)
+std::string codigo(const std::string& numero); // "7xk" (o número e o código; "" se não é conversa)
 // "Maria"; "WhatsApp" para a própria ponte; "Conversa 7" sem nome
 std::string nome(const std::string& numero);
-std::string endereco(int conversa, const std::string& nome);   // "WA#7 Maria"
+std::string endereco(const std::string& codigo, const std::string& nome);   // ("7xk", "Maria") → "WA#7xk Maria"
 
-// O texto da SMS que vai para a ponte: "WA#7 " + texto (conversa), o texto
-// como está (a própria ponte: comandos) ou, para um número comum, também
-// como está.
+// O texto da SMS que vai para a ponte: "WA#7xk " + texto (conversa), o
+// texto como está (a própria ponte: comandos) ou, para um número comum,
+// também como está.
 std::string textoParaPonte(const std::string& numero, const std::string& texto);
 
 // SMS que chegou da ponte → o endereço e o texto para a caixa.
 // false: não está no formato da ponte (fica como SMS comum)
 bool daPonte(const std::string& sms, std::string& numero, std::string& texto);
 
-std::string silenciar(int conversa);   // "WA-7"
-std::string reativar(int conversa);    // "WA+7"
+std::string silenciar(const std::string& numero);   // "WA#7xk Maria" → "WA-7xk"
+std::string reativar(const std::string& numero);    // "WA#7xk Maria" → "WA+7xk"
 
-// O mesmo telefone? "+5511977776666", "11977776666" e "977776666" são o
-// mesmo: compara os últimos 9 dígitos (8, se um deles for mais curto).
+// O mesmo telefone? "+5511977776666", "011977776666" e "11977776666" são o
+// mesmo: compara os últimos 11 dígitos (o DDD e o número; 10 se um deles
+// for mais curto). Sem o DDD não vale: outro DDD é outro telefone.
 bool mesmoNumero(const std::string& a, const std::string& b);
 
 }  // namespace whatsapp

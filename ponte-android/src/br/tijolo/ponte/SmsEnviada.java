@@ -5,18 +5,34 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 
-/** O resultado de cada parte de SMS mandada ao Tijolo, para o registro. */
+/** O resultado de cada parte de SMS mandada ao Tijolo: tira da fila, ou tenta de novo mais tarde. */
 public class SmsEnviada extends BroadcastReceiver {
   @Override
   public void onReceive(Context c, Intent i) {
-    final int parte = i.getIntExtra("parte", 1), partes = i.getIntExtra("partes", 1);
-    if (parte != partes && getResultCode() == Activity.RESULT_OK) return;   // só a última, se deu certo
+    final long id = i.getLongExtra("id", 0);
+    final int partes = i.getIntExtra("partes", 1);
     final String resumo = i.getStringExtra("resumo");
-    if (getResultCode() == Activity.RESULT_OK) {
-      Ponte.registrar(c, "→ Tijolo: " + resumo + (partes > 1 ? " (" + partes + " partes)" : ""));
-    } else {
-      Ponte.registrar(c, "FALHOU a SMS (" + motivo(getResultCode()) + "): " + resumo);
+    final boolean ok = getResultCode() == Activity.RESULT_OK;
+    final long agora = Ponte.agora();
+    final Saida s = Ponte.saida(c);
+    final long esperaAntes = s.esperaAtual(id);
+    switch (s.resultado(id, ok, agora)) {
+      case SAIU:
+        Ponte.registrar(c, "→ Tijolo: " + resumo + (partes > 1 ? " (" + partes + " partes)" : ""));
+        break;
+      case VAI_TENTAR_DE_NOVO: {
+        final long quando = s.esperaAtual(id);
+        Ponte.registrar(c, "FALHOU a SMS (" + motivo(getResultCode()) + "): " + resumo +
+            (quando > esperaAntes ? "; tento de novo às " + Ponte.hora(quando) : ""));
+        break;
+      }
+      case DESISTIU:
+        Ponte.registrar(c, "Desisti da SMS depois de 2 dias tentando: " + resumo);
+        break;
+      default:
+        break;
     }
+    Ponte.esvaziarSaida(c);
   }
 
   private static String motivo(int r) {
@@ -25,6 +41,7 @@ public class SmsEnviada extends BroadcastReceiver {
       case 2: return "rádio desligado (modo avião?)";               // RESULT_ERROR_RADIO_OFF
       case 3: return "erro no envio";                               // RESULT_ERROR_NULL_PDU
       case 4: return "sem sinal";                                   // RESULT_ERROR_NO_SERVICE
+      case 5: return "limite de SMS do Android";                    // RESULT_ERROR_LIMIT_EXCEEDED
       default: return "código " + r;
     }
   }

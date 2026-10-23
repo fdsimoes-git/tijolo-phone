@@ -1,14 +1,20 @@
 package br.tijolo.ponte;
 
+import java.text.Normalizer;
+
 /**
  * Deixa o texto do WhatsApp do jeito que o Tijolo mostra e o SMS leva bem:
  * a tela do Tijolo só tem as letras do português (Latin-1) e alguns sinais;
  * emoji viraria um quadradinho e ainda faria o SMS caber menos.
  *
  *  - os marcadores de mídia do WhatsApp viram palavras: "📷 Foto" → "[foto] Foto"
+ *    (sem acento: um texto só com letras sem acento vai mais barato no SMS)
  *  - alguns emoji comuns viram sinais: 😀 → ":)", ❤️ → "<3", 👍 → "(ok)"
  *  - os outros emoji somem (se não sobrar nada, fica "[emoji]")
- *  - quebras de linha em excesso somem e o texto é cortado em `maximo`
+ *  - letras "enfeitadas" (𝓜𝓪𝓻𝓲𝓪, ｍａｒｉａ) viram as comuns; caracteres de
+ *    controle somem; quebras de linha em excesso somem
+ *  - o texto é cortado em `maximo` unidades de SMS (UTF-16: uma letra comum
+ *    é 1, uma letra rara de fora do BMP é 2)
  *
  * Só Java comum: os testes rodam no computador.
  */
@@ -46,8 +52,8 @@ public final class Texto {
       {0x1F61C, 23}, {0x1F61B, 23}, {0x1F61D, 23},
   };
   private static final String[] PALAVRAS = {
-      "[foto]", "[vídeo]", "[áudio]", "[documento]", "[localização]", "[contato]", "[enquete]", "[chamada]", "", "",
-      ":)", ":D", ";)", ":(", "<3", "(ok)", "(não)", "(obrigado)", "(palmas)", "(hmm)", "B)", ":O", ">:(", ":P",
+      "[foto]", "[video]", "[audio]", "[documento]", "[local]", "[contato]", "[enquete]", "[chamada]", "", "",
+      ":)", ":D", ";)", ":(", "<3", "(ok)", "(nao)", "(obrigado)", "(palmas)", "(hmm)", "B)", ":O", ">:(", ":P",
   };
 
   private static String palavra(int cp) {
@@ -70,20 +76,44 @@ public final class Texto {
         (cp >= 0x202A && cp <= 0x202E) || (cp >= 0x2066 && cp <= 0x2069) || cp == 0x200E || cp == 0x200F;
   }
 
+  // Controle (C0, DEL, C1), menos a quebra de linha
+  private static boolean ehControle(int cp) {
+    return (cp < 0x20 && cp != '\n') || (cp >= 0x7F && cp < 0xA0);
+  }
+
   private static boolean tijoloMostra(int cp) {
     return (cp >= 0x20 && cp < 0x7F) || (cp >= 0xA0 && cp <= 0xFF) || cp == '\n' || EXTRAS.indexOf(cp) >= 0;
   }
 
-  /** O texto pronto para o Tijolo, com no máximo `maximo` caracteres. */
+  /** As letras "enfeitadas" e as largas viram as comuns (NFKC); o resto fica igual. */
+  private static String desenfeitar(String s) {
+    final StringBuilder b = new StringBuilder(s.length());
+    for (int i = 0; i < s.length();) {
+      final int cp = s.codePointAt(i);
+      final int n = Character.charCount(cp);
+      if (tijoloMostra(cp) || palavra(cp) != null || ehEmoji(cp) || ehInvisivel(cp)) {
+        b.append(s, i, i + n);
+      } else {
+        final String k = Normalizer.normalize(s.substring(i, i + n), Normalizer.Form.NFKC);
+        b.append(k);
+      }
+      i += n;
+    }
+    return b.toString();
+  }
+
+  /** O texto pronto para o Tijolo, com no máximo `maximo` unidades de SMS. */
   public static String limpar(CharSequence entrada, int maximo) {
     if (entrada == null) return "";
-    final String s = entrada.toString().replace("\r\n", "\n").replace('\r', '\n').replace('\t', ' ');
+    // NFC junta os acentos soltos ("e" + "´" → "é") antes de tudo
+    final String s = desenfeitar(Normalizer.normalize(entrada.toString(), Normalizer.Form.NFC)
+        .replace("\r\n", "\n").replace('\r', '\n').replace('\t', ' '));
     final StringBuilder b = new StringBuilder(s.length());
     boolean tinhaAlgo = false;
     for (int i = 0; i < s.length();) {
       final int cp = s.codePointAt(i);
       i += Character.charCount(cp);
-      if (ehInvisivel(cp)) continue;
+      if (ehInvisivel(cp) || ehControle(cp)) continue;
       final String p = palavra(cp);
       if (p != null) {
         tinhaAlgo = true;
@@ -115,10 +145,14 @@ public final class Texto {
     return cortar(r, maximo);
   }
 
-  /** Corta em `maximo` caracteres (sem partir um caractere), com "..." no fim. */
+  /**
+   * Corta em `maximo` unidades UTF-16 (o que o SMS conta), sem partir um
+   * caractere, com "..." no fim.
+   */
   public static String cortar(String s, int maximo) {
-    if (s.codePointCount(0, s.length()) <= maximo) return s;
-    final int fim = s.offsetByCodePoints(0, Math.max(0, maximo - 3));
+    if (s.length() <= maximo) return s;
+    int fim = Math.max(0, maximo - 3);
+    if (fim > 0 && Character.isHighSurrogate(s.charAt(fim - 1))) fim--;
     return s.substring(0, fim).trim() + "...";
   }
 }

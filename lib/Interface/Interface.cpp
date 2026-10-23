@@ -104,7 +104,7 @@ void Interface::begin(Telefone& tel, int volume, const char* const* nomesFios, u
   _sujo = true;
   // A letra que deixaria a mensagem maior que o máximo de SMS não entra
   // (no ciclo da tecla, ela é pulada)
-  // (para o WhatsApp, conta também o "WA#7 " que vai na frente)
+  // (para o WhatsApp, conta também o "WA#7xk " que vai na frente)
   _mt.limitar([this](const std::string& t) {
     return pdu::contar(whatsapp::textoParaPonte(_para, t)).partes <= _maxPartes;
   });
@@ -156,6 +156,7 @@ void Interface::chamadaRecebida(const std::string& numero, uint32_t agora) {
   _motivo.clear();
   _conectouEm = 0;
   if (_acao == Acao::EnviarSms) _envioAdiado();   // o SMS ainda não tinha saído
+  if (_acao == Acao::Comando) _avisoDepois = "O pedido à ponte do WhatsApp não foi (chegou uma chamada). Peça de novo.";
   _acao = Acao::Nenhuma;
   _ir(Tela::Recebendo, agora);
 }
@@ -1033,11 +1034,11 @@ void Interface::_executarOpcao(Opcao o, uint32_t agora) {
       break;
     case Opcao::Apagar: _ir(Tela::Apagar, agora); break;
     case Opcao::Silenciar:
-      _pedirAPonte(whatsapp::silenciar(whatsapp::conversa(_msg.numero)),
+      _pedirAPonte(whatsapp::silenciar(_msg.numero),
                    "Pedi à ponte: " + whatsapp::nome(_msg.numero) + " fica em silêncio.", agora);
       break;
     case Opcao::Reativar:
-      _pedirAPonte(whatsapp::reativar(whatsapp::conversa(_msg.numero)),
+      _pedirAPonte(whatsapp::reativar(_msg.numero),
                    "Pedi à ponte: " + whatsapp::nome(_msg.numero) + " volta a chegar.", agora);
       break;
     case Opcao::Pausar:
@@ -1716,7 +1717,7 @@ void Interface::_desenharEscrever(Quadro& q) const {
   }
 
   // Tamanho: letras usadas / cabem, e em quantos SMS vai (para o WhatsApp,
-  // o "WA#7 " da frente ocupa espaço mas não aparece na conta)
+  // o "WA#7xk " da frente ocupa espaço mas não aparece na conta)
   const std::string envio = whatsapp::textoParaPonte(_para, t);
   const int frente = (int)(envio.size() - t.size());
   const pdu::Contagem c = pdu::contar(envio);
@@ -1769,7 +1770,9 @@ void Interface::_desenharEnviado(Quadro& q) const {
   if (_envioOk) {
     q.circulo(L / 2.f, 112.f, 30.f, cor::VERDE);
     q.texto(L / 2, 112 + fonteGrande.maiuscula / 2, "✓", fonteGrande, cor::FUNDO, Alinha::Centro);
-    q.texto(L / 2, 178, "Mensagem enviada", fonteTitulo, cor::TEXTO, Alinha::Centro);
+    // Para o WhatsApp, "enviada" é até a ponte: ela é quem põe no WhatsApp
+    q.texto(L / 2, 178, whatsapp::ehEndereco(_envioPara) ? "Enviada à ponte" : "Mensagem enviada", fonteTitulo,
+            cor::TEXTO, Alinha::Centro);
     q.texto(L / 2, 204, Quadro::caber(formatarNumero(_envioPara), fonteTexto, L - 32), fonteTexto, cor::SUAVE,
             Alinha::Centro);
     return;                                    // some sozinha

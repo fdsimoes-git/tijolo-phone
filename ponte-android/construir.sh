@@ -7,9 +7,10 @@
 #   sh construir.sh
 #
 # Sai em saida/PonteDoTijolo.apk. A chave que assina o app fica em
-# chave/ponte.jks (fora do git): guarde uma cópia. As atualizações precisam
-# da MESMA chave, senão o Android só instala depois de desinstalar a versão
-# velha (e aí o app esquece o número do Tijolo e as conversas).
+# chave/ponte.jks e a senha dela em chave/senha.txt (os dois fora do git):
+# guarde uma cópia dos dois. As atualizações precisam da MESMA chave, senão o
+# Android só instala depois de desinstalar a versão velha (e aí o app esquece
+# o número do Tijolo e as conversas).
 set -eu
 cd "$(dirname "$0")"
 
@@ -17,7 +18,18 @@ SDK=${ANDROID_HOME:-/usr/lib/android-sdk}
 AJ=${ANDROID_JAR:-$SDK/platforms/android-23/android.jar}
 BT=${BUILD_TOOLS:-$SDK/build-tools/debian}
 CHAVE=${PONTE_CHAVE:-chave/ponte.jks}
-SENHA=${PONTE_SENHA:-ponte-do-tijolo}
+# A senha da chave: PONTE_SENHA, ou chave/senha.txt. Uma chave nova ganha
+# uma senha sorteada (guardada em chave/senha.txt); as chaves criadas antes
+# disso usam a senha antiga, "ponte-do-tijolo".
+ARQ_SENHA="$(dirname "$CHAVE")/senha.txt"
+if [ -n "${PONTE_SENHA:-}" ]; then SENHA=$PONTE_SENHA
+elif [ -f "$ARQ_SENHA" ]; then SENHA=$(cat "$ARQ_SENHA")
+elif [ -f "$CHAVE" ]; then SENHA=ponte-do-tijolo
+else
+  mkdir -p "$(dirname "$CHAVE")"
+  SENHA=$(od -An -N18 -tx1 /dev/urandom | tr -d ' \n')
+  (umask 077 && printf '%s' "$SENHA" > "$ARQ_SENHA")
+fi
 
 ferramenta() {   # o caminho de uma ferramenta: no build-tools ou no PATH
   if [ -x "$BT/$1" ]; then echo "$BT/$1"; elif command -v "$1" >/dev/null 2>&1; then command -v "$1"
@@ -51,7 +63,7 @@ echo "5/6 empacotando"
 
 echo "6/6 assinando"
 if [ ! -f "$CHAVE" ]; then
-  echo "    (primeira vez: criando a chave $CHAVE — guarde uma cópia!)"
+  echo "    (primeira vez: criando a chave $CHAVE e a senha $ARQ_SENHA — guarde uma cópia dos dois!)"
   mkdir -p "$(dirname "$CHAVE")"
   keytool -genkeypair -keystore "$CHAVE" -storepass "$SENHA" -keypass "$SENHA" -alias ponte \
     -keyalg RSA -keysize 2048 -validity 20000 -dname "CN=Ponte do Tijolo" >/dev/null 2>&1

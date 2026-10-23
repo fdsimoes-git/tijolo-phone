@@ -10,6 +10,10 @@
   <uses-permission android:name="android.permission.SEND_SMS" />
   <uses-permission android:name="android.permission.RECEIVE_SMS" />
   <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+  <!-- não deixa o Android dormir com mensagem esperando na fila (até 1 minuto) -->
+  <uses-permission android:name="android.permission.WAKE_LOCK" />
+  <!-- avisar o Tijolo quando o Android reinicia -->
+  <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
   <application
       android:label="@string/nome"
@@ -47,5 +51,15 @@
 
     <!-- O resultado de cada SMS mandada ao Tijolo -->
     <receiver android:name=".SmsEnviada" android:exported="false" />
+
+    <!-- Os alarmes do app: tentar de novo uma SMS da fila; a vigia de 30 em 30 min -->
+    <receiver android:name=".Despertador" android:exported="false" />
+
+    <!-- O Android ligou -->
+    <receiver android:name=".AoLigar" android:exported="true">
+      <intent-filter>
+        <action android:name="android.intent.action.BOOT_COMPLETED" />
+      </intent-filter>
+    </receiver>
   </application>
 </manifest>

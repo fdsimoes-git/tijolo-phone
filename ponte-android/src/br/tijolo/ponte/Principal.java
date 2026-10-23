@@ -11,7 +11,6 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.PowerManager;
 import android.provider.Settings;
-import android.service.notification.NotificationListenerService;
 import android.text.InputType;
 import android.util.TypedValue;
 import android.view.View;
@@ -26,7 +25,7 @@ import android.widget.Toast;
 
 /** A única tela do app: o número do Tijolo, as permissões, as opções e o registro. */
 public class Principal extends Activity {
-  private TextView estado, restrito, lista, registro;
+  private TextView estado, restrito, lista, registro, fila;
   private EditText numero;
   private CheckBox ligada, grupos;
   private LinearLayout coluna;
@@ -55,12 +54,13 @@ public class Principal extends Activity {
     botao("Guardar o número", new View.OnClickListener() {
       @Override
       public void onClick(View v) {
-        final String d = Ponte.digitos(numero.getText().toString());
-        if (d.length() < 10) {
+        final String d = Ponte.arrumarNumero(numero.getText().toString());
+        if (d == null) {
           Toast.makeText(Principal.this, "Escreva o número com DDD.", Toast.LENGTH_LONG).show();
           return;
         }
         Ponte.opcoes(Principal.this).edit().putString("tijolo", d).apply();
+        numero.setText(d);
         Ponte.registrar(Principal.this, "Número do Tijolo: " + d);
         atualizar();
       }
@@ -104,10 +104,28 @@ public class Principal extends Activity {
     botao("Mandar uma SMS de teste ao Tijolo", new View.OnClickListener() {
       @Override
       public void onClick(View v) {
-        final boolean ok = Ponte.enviarSms(Principal.this, Ponte.numeroTijolo(Principal.this),
-            Protocolo.aviso("Teste da ponte: se chegou, o caminho Android -> Tijolo funciona."));
-        Toast.makeText(Principal.this, ok ? "Mandando..." : "Não deu: veja o registro.", Toast.LENGTH_SHORT).show();
+        if (Ponte.numeroTijolo(Principal.this).isEmpty()) {
+          Toast.makeText(Principal.this, "Falta o número do Tijolo.", Toast.LENGTH_LONG).show();
+          return;
+        }
+        Ponte.enviar(Principal.this, Protocolo.aviso("Teste da ponte: se chegou, o caminho Android -> Tijolo funciona."));
+        Toast.makeText(Principal.this, "Mandando...", Toast.LENGTH_SHORT).show();
         atualizar();
+      }
+    });
+    fila = texto("", 14);
+    botao("Tentar mandar a fila agora", new View.OnClickListener() {
+      @Override
+      public void onClick(View v) {
+        Ponte.esvaziarSaida(Principal.this);
+        atualizar();
+      }
+    });
+    botao("Diagnóstico: anotar as próximas 10 notificações do WhatsApp", new View.OnClickListener() {
+      @Override
+      public void onClick(View v) {
+        Ponte.opcoes(Principal.this).edit().putInt("diagnostico", 10).apply();
+        Toast.makeText(Principal.this, "Elas aparecem no registro, embaixo.", Toast.LENGTH_LONG).show();
       }
     });
 
@@ -124,6 +142,7 @@ public class Principal extends Activity {
   @Override
   protected void onResume() {
     super.onResume();
+    Ponte.agendarVigia(this);
     atualizar();
   }
 
@@ -144,7 +163,7 @@ public class Principal extends Activity {
     linha(b, acesso, acesso ? "Acesso às notificações liberado" : "Falta o acesso às notificações (botão abaixo)");
     if (acesso) {
       final boolean ouvindo = Ouvinte.ouvindo();
-      if (!ouvindo) religar();
+      if (!ouvindo) Ouvinte.religar(this);
       linha(b, ouvindo, ouvindo ? "Ouvindo o WhatsApp agora"
           : "Ainda não está ouvindo. Se continuar assim, desligue e ligue de novo o acesso às notificações.");
     }
@@ -155,13 +174,16 @@ public class Principal extends Activity {
       linha(b, false, "O Android pode tirar as permissões se o app ficar sem uso: em \"Informações do app\", " +
           "desligue \"Remover permissões se o app não for usado\" / \"Pausar atividade no app\"");
     estado.setText(b.toString().trim());
+    final int n = Ponte.saida(this).pendentes();
+    fila.setText(n == 0 ? "Fila de SMS para o Tijolo: vazia."
+        : "Fila de SMS para o Tijolo: " + n + " esperando (sem sinal, sem crédito ou no limite por minuto).");
     restrito.setVisibility(Build.VERSION.SDK_INT >= 33 && !(sms && acesso) ? View.VISIBLE : View.GONE);
     ligada.setChecked(Ponte.ligada(this));
     grupos.setChecked(Ponte.grupos(this));
 
     final StringBuilder l = new StringBuilder();
     for (Conversas.Entrada e : Ponte.conversas(this).recentes(30)) {
-      l.append('#').append(e.numero).append("  ").append(e.titulo);
+      l.append('#').append(e.numero).append(Protocolo.codigo(e.chave)).append("  ").append(e.titulo);
       if (Ponte.silenciada(this, e.chave)) l.append("  (silenciada: WA+").append(e.numero).append(" reativa)");
       l.append('\n');
     }
@@ -210,16 +232,6 @@ public class Principal extends Activity {
     final String lista = Settings.Secure.getString(getContentResolver(), "enabled_notification_listeners");
     final String eu = new ComponentName(this, Ouvinte.class).flattenToString();
     return lista != null && lista.contains(eu);
-  }
-
-  // Android 7+: pede ao sistema para ligar o ouvinte de novo
-  private void religar() {
-    try {
-      NotificationListenerService.class.getMethod("requestRebind", ComponentName.class)
-          .invoke(null, new ComponentName(this, Ouvinte.class));
-    } catch (Exception ignorada) {
-      // Android antigo: o usuário desliga e liga o acesso
-    }
   }
 
   private boolean abrir(Intent i) {

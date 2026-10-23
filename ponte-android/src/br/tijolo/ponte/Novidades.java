@@ -1,6 +1,7 @@
 package br.tijolo.ponte;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -11,10 +12,12 @@ import java.util.Set;
  * foram para o Tijolo.
  *
  * A notificação de uma conversa traz as mensagens não lidas e é refeita a
- * cada mensagem nova, repetindo as anteriores. Por isso cada conversa
- * guarda as "marcas" (hora + autor + texto) das mensagens que já viu, e só
- * vai o que tem marca nova. (Pela hora apenas não dá: uma mensagem que
- * chega atrasada tem hora antiga e se perderia.)
+ * cada mensagem nova, repetindo as anteriores. Por isso a ponte guarda as
+ * "marcas" (hora + texto) das mensagens que já repassou: as de cada
+ * conversa e, à parte, as mais recentes de todas. Só vai o que tem marca
+ * nova. Pela hora apenas não dá: uma mensagem que chega atrasada tem hora
+ * antiga e se perderia. E a marca não leva o autor: se o contato muda de
+ * nome (ou a conversa muda de chave), as mensagens dela não voltam.
  *
  * As mensagens escritas por você (a resposta que veio do Tijolo aparece na
  * notificação) não voltam.
@@ -26,10 +29,12 @@ public final class Novidades {
 
   /** Quantas marcas cada conversa guarda (a notificação mostra no máximo ~25 mensagens) */
   public static final int MARCAS = 40;
+  /** Quantas marcas guarda o conjunto de todas as conversas */
+  public static final int MARCAS_GERAL = 400;
 
   public static final class Msg {
     public final long hora;
-    public final String autor;     // null = você mesmo
+    public final String autor;     // null = você mesmo; "" = alguém sem nome (o Android escondeu)
     public final String texto;
 
     public Msg(long hora, String autor, String texto) {
@@ -43,32 +48,41 @@ public final class Novidades {
    * As mensagens que ainda não foram.
    *
    * @param vistas as marcas já vistas nesta conversa; null = conversa nunca vista
+   * @param geral  as marcas recentes de todas as conversas (pode ser null)
    * @param eu     o nome com que o WhatsApp mostra você ("Você"), ou null
    * @param desde  para conversa nunca vista: só as mensagens depois desta hora
    *               (ao ligar a ponte, as antigas não viram uma enxurrada de
    *               SMS); 0 = todas
    */
-  public static List<Msg> novas(List<Msg> todas, Set<String> vistas, String eu, long desde) {
+  public static List<Msg> novas(List<Msg> todas, Set<String> vistas, Set<String> geral, String eu, long desde) {
     final List<Msg> v = new ArrayList<>();
     for (Msg m : todas) {
       if (m.texto == null || m.texto.trim().isEmpty()) continue;
       if (minha(m, eu)) continue;
-      if (vistas != null ? vistas.contains(marca(m)) : m.hora <= desde) continue;
+      final String k = marca(m);
+      if (geral != null && geral.contains(k)) continue;
+      if (vistas != null ? vistas.contains(k) : m.hora <= desde) continue;
       v.add(m);
     }
     return v;
   }
 
-  /** As marcas vistas depois desta notificação (as antigas + as dela, no máximo MARCAS). */
-  public static String juntar(Set<String> vistas, List<Msg> todas) {
-    final LinkedHashSet<String> r = vistas == null ? new LinkedHashSet<String>() : new LinkedHashSet<>(vistas);
-    for (Msg m : todas) {
+  /** As marcas de antes + as destas mensagens (as mais novas no fim), no máximo `limite`. */
+  public static String juntar(Set<String> antes, Collection<Msg> msgs, int limite) {
+    final LinkedHashSet<String> r = antes == null ? new LinkedHashSet<String>() : new LinkedHashSet<>(antes);
+    for (Msg m : msgs) {
       final String k = marca(m);
       r.remove(k);                 // a mais nova vai para o fim
       r.add(k);
     }
+    return juntarMarcas(r, limite);
+  }
+
+  /** O mesmo, com marcas já calculadas */
+  public static String juntarMarcas(Collection<String> marcas, int limite) {
+    final LinkedHashSet<String> r = new LinkedHashSet<>(marcas);
     final Iterator<String> it = r.iterator();
-    for (int sobra = r.size() - MARCAS; sobra > 0; sobra--) {
+    for (int sobra = r.size() - limite; sobra > 0; sobra--) {
       it.next();
       it.remove();
     }
@@ -89,9 +103,9 @@ public final class Novidades {
     return r;
   }
 
-  /** A marca de uma mensagem: dois hashes de 32 bits de hora + autor + texto. */
-  static String marca(Msg m) {
-    final String s = m.hora + "\u0001" + (m.autor == null ? "" : m.autor) + "\u0001" + (m.texto == null ? "" : m.texto);
+  /** A marca de uma mensagem: dois hashes de 32 bits de hora + texto. */
+  public static String marca(Msg m) {
+    final String s = m.hora + "\u0001" + (m.texto == null ? "" : m.texto);
     int fnv = 0x811C9DC5;
     for (int i = 0; i < s.length(); i++) {
       fnv ^= s.charAt(i);
@@ -100,8 +114,17 @@ public final class Novidades {
     return Integer.toHexString(s.hashCode()) + Integer.toHexString(fnv);
   }
 
-  static boolean minha(Msg m, String eu) {
-    if (m.autor == null || m.autor.trim().isEmpty()) return true;
+  /** Escrita por você? (sem autor = você; o nome igual ao seu também) */
+  public static boolean minha(Msg m, String eu) {
+    if (m.autor == null) return true;
     return eu != null && !eu.trim().isEmpty() && m.autor.trim().equalsIgnoreCase(eu.trim());
+  }
+
+  /** O autor da mensagem mais recente que não é você (para o título de uma conversa a dois), ou null */
+  public static String outroMaisRecente(List<Msg> todas, String eu) {
+    Msg r = null;
+    for (Msg m : todas)
+      if (!minha(m, eu) && !m.autor.trim().isEmpty() && (r == null || m.hora >= r.hora)) r = m;
+    return r == null ? null : r.autor.trim();
   }
 }

@@ -7,6 +7,7 @@ public interface SharedPreferences {
   String getString(String k, String padrao);
   boolean getBoolean(String k, boolean padrao);
   long getLong(String k, long padrao);
+  int getInt(String k, int padrao);
   Map<String, ?> getAll();
   Editor edit();
 
@@ -14,6 +15,7 @@ public interface SharedPreferences {
     Editor putString(String k, String v);
     Editor putBoolean(String k, boolean v);
     Editor putLong(String k, long v);
+    Editor putInt(String k, int v);
     Editor remove(String k);
     void apply();
     boolean commit();

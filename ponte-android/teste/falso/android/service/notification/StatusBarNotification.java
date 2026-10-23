@@ -15,5 +15,6 @@ public class StatusBarNotification {
 
   public String getPackageName() { return pacote; }
   public String getTag() { return etiqueta; }
+  public int getId() { return 1; }
   public Notification getNotification() { return n; }
 }

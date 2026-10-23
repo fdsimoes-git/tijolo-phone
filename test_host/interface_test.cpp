@@ -1202,24 +1202,26 @@ int main() {
     toque(TECLA_VERMELHA);                                // da mensagem para a tela inicial
     passar(5000);
     CONFERE(us.tela() == Tela::Inicio);
-    // A ponte manda "WA#7 Maria\nChego às 8 :)"; o main guarda como de "WA#7 Maria"
-    const uint32_t wa = us.mensagem("WA#7 Maria", "26/10/21,18:00:00-12", "Chego às 8 :)", agora);
+    // A ponte manda "WA#7xk Maria\nChego às 8 :)"; o main guarda como de "WA#7xk Maria"
+    const uint32_t wa = us.mensagem("WA#7xk Maria", "26/10/21,18:00:00-12", "Chego às 8 :)", agora);
     CONFERE(us.tela() == Tela::Ler && us.lendo() == wa);
     foto("60_whatsapp_ler");
     toque(TECLA_VERDE);                                   // responder
-    CONFERE(us.tela() == Tela::Escrever && us.destinatario() == "WA#7 Maria");
+    CONFERE(us.tela() == Tela::Escrever && us.destinatario() == "WA#7xk Maria");
     escrever("666" "55");                                 // "Ok"
     passar(1100);
     CONFERE(us.escrita().texto() == "Ok");
     foto("61_whatsapp_responder");
     toque(TECLA_VERDE);                                   // a conversa já está lá
-    CONFERE(us.tela() == Tela::Para && us.destinatario() == "WA#7 Maria");
+    CONFERE(us.tela() == Tela::Para && us.destinatario() == "WA#7xk Maria");
     foto("62_whatsapp_para");
     toque(TECLA_VERDE);
-    CONFERE(ts.pediu("sms WA#7 Maria Ok"));               // o main troca pelo número da ponte e põe o "WA#7 "
+    CONFERE(ts.pediu("sms WA#7xk Maria Ok"));             // o main troca pelo número da ponte e põe o "WA#7xk "
+    CONFERE(us.tela() == Tela::Enviado);
+    foto("62b_whatsapp_enviada");                         // "Enviada à ponte"
     CONFERE(c17.itens()[0].estado == Caixa::Enviada);
     Caixa::Mensagem m;
-    CONFERE(c17.ler(c17.itens()[0].id, m) && m.numero == "WA#7 Maria" && m.texto == "Ok");
+    CONFERE(c17.ler(c17.itens()[0].id, m) && m.numero == "WA#7xk Maria" && m.texto == "Ok");
     passar(3000);
     CONFERE(us.tela() == Tela::Inicio);
 
@@ -1240,14 +1242,14 @@ int main() {
     toque('8');                                           // Silenciar a conversa
     toque('5');
     CONFERE(us.tela() == Tela::Ler);
-    CONFERE(ts.pediu("sms WA WA-7"));                     // o pedido vai para a ponte...
+    CONFERE(ts.pediu("sms WA WA-7xk"));                   // o pedido vai para a ponte, com o código...
     CONFERE(ts.quantos("sms ") == smsAntes + 1);
     CONFERE(c17.total() == totalAntes);                   // ...e não fica na caixa
     CONFERE(us.ultimoAviso() == "Pedi à ponte: Maria fica em silêncio.");
     toque('5');
     toque('8'); toque('8');                               // Reativar
     toque('5');
-    CONFERE(ts.pediu("sms WA WA+7"));
+    CONFERE(ts.pediu("sms WA WA+7xk"));
     ts.smsOk = false;
     toque('5');
     toque('8'); toque('8');
@@ -1272,8 +1274,8 @@ int main() {
     toque('5');
     CONFERE(ts.pediu("sms WA WA+"));
 
-    // O "WA#7 " vai na frente: conta no tamanho máximo (6 SMS = 918 letras sem acento)
-    const uint32_t naoFoiWa = c17.guardar(Caixa::NaoEnviada, "WA#7 Maria", "", std::string(913, 'x'));
+    // O "WA#7xk " vai na frente: conta no tamanho máximo (6 SMS = 918 letras sem acento)
+    const uint32_t naoFoiWa = c17.guardar(Caixa::NaoEnviada, "WA#7xk Maria", "", std::string(911, 'x'));
     toque(TECLA_VERMELHA);
     toque('2'); toque('2'); toque('2');
     CONFERE(us.selecionada() == naoFoiWa);
@@ -1281,10 +1283,10 @@ int main() {
     toque('5');                                           // Tentar de novo, Editar, Encaminhar, Apagar
     toque('8');
     toque('5');                                           // Editar
-    CONFERE(us.tela() == Tela::Escrever && us.escrita().texto().size() == 913);
-    toque('2');                                           // a 914ª não cabe (914 + "WA#7 " = 919)
+    CONFERE(us.tela() == Tela::Escrever && us.escrita().texto().size() == 911);
+    toque('2');                                           // a 912ª não cabe (912 + "WA#7xk " = 919)
     passar(1100);
-    CONFERE(us.escrita().texto().size() == 913 && us.ultimoAviso().find("tamanho máximo") != std::string::npos);
+    CONFERE(us.escrita().texto().size() == 911 && us.ultimoAviso().find("tamanho máximo") != std::string::npos);
     foto("66_whatsapp_maximo");
     toque('#');                                           // apaga uma: e agora
     toque(TECLA_VERDE);
@@ -1297,6 +1299,27 @@ int main() {
     segura('#');
     toque(TECLA_VERMELHA);                                // vazio: volta para a mensagem
     passar(5000);
+
+    // Chegou uma chamada antes de o pedido à ponte sair: ele não sai, e o aviso vem depois
+    for (int i = 0; i < 4 && us.tela() != Tela::Inicio; i++) toque(TECLA_VERMELHA);
+    CONFERE(us.tela() == Tela::Inicio);
+    const uint32_t ana = us.mensagem("WA#3ab Ana", "26/10/21,18:10:00-12", "oi", agora);
+    CONFERE(us.tela() == Tela::Ler && us.lendo() == ana);
+    toque('5');                                           // opções
+    toque('8');                                           // Silenciar
+    const int antesDaChamada = ts.quantos("sms ");
+    EventoTecla e;
+    e.tipo = EventoTecla::Apertou;
+    e.tecla = '5';
+    us.tecla(e, agora);                                   // "Falando com a ponte…", ainda não desenhada
+    us.chamadaRecebida("+5511977776666", agora);
+    passar(50);
+    CONFERE(us.tela() == Tela::Recebendo && ts.quantos("sms ") == antesDaChamada);
+    us.chamadaPerdida("+5511977776666", agora);
+    passar(7000);
+    CONFERE(us.tela() == Tela::Inicio && us.ultimoAviso().find("pedido à ponte") != std::string::npos);
+    evento(EventoTecla::Apertou, TECLA_VERMELHA);
+    evento(EventoTecla::Soltou, TECLA_VERMELHA);          // "Limpar" a chamada perdida
   }
   u = &ui;
 
@@ -1357,9 +1380,10 @@ int main() {
     CONFERE(Interface::explicarErro("sem resposta (tempo esgotado)") == "sem resposta (tempo esgotado)");
     CONFERE(Interface::ehNumero("+5511999998888") && Interface::ehNumero("190") && !Interface::ehNumero("TIM") &&
             !Interface::ehNumero("12") && !Interface::ehNumero("+") && !Interface::ehNumero("*222#"));
-    CONFERE(Interface::formatarNumero("WA#7 Maria") == "Maria (WhatsApp)");
+    CONFERE(Interface::formatarNumero("WA#7xk Maria") == "Maria (WhatsApp)");
+    CONFERE(Interface::formatarNumero("WA#7xk") == "Conversa 7 (WhatsApp)");
     CONFERE(Interface::formatarNumero("WA") == "Ponte do WhatsApp");
-    CONFERE(Interface::podeResponder("WA#7 Maria") && Interface::podeResponder("190") &&
+    CONFERE(Interface::podeResponder("WA#7xk Maria") && Interface::podeResponder("190") &&
             !Interface::podeResponder("WA") && !Interface::podeResponder("TIM"));
   }
 

@@ -1,10 +1,12 @@
 package br.tijolo.ponte;
 
+import android.app.AlarmManager;
 import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.os.Build;
+import android.os.SystemClock;
 import android.telephony.SmsManager;
 
 import java.text.SimpleDateFormat;
@@ -12,16 +14,17 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.Locale;
 
-/** O que as partes do app usam em comum: as opções, o registro e mandar SMS. */
+/** O que as partes do app usam em comum: as opções, a caixa de saída das SMS, o registro. */
 public final class Ponte {
   private Ponte() {}
 
   public static final String[] PACOTES_WHATSAPP = {"com.whatsapp", "com.whatsapp.w4b"};
+  public static final String[] NOMES_DO_APP = {"WhatsApp", "WhatsApp Business"};
 
   /**
    * Texto máximo de uma SMS repassada (o resto vira "..."). Com acento, o SMS
-   * vai em partes de 67 letras: 330 + "WA#123 " + o título cabem em 6 partes
-   * (cada parte é cobrada como uma SMS).
+   * vai em partes de 67 letras: 330 + "WA#123xx " + o título cabem em 6
+   * partes (cada parte é cobrada como uma SMS).
    */
   public static final int MAXIMO_TEXTO = 330;
   /** Título máximo de uma conversa */
@@ -37,6 +40,17 @@ public final class Ponte {
 
   /** Ao ligar a ponte, das conversas que ela não conhecia só vão as mensagens dos últimos 30 min */
   public static final long JANELA_AO_LIGAR_MS = 30 * 60 * 1000;
+
+  /** O relógio do app (os testes no computador adiantam com `adiantar`) */
+  static long desvio = 0;
+
+  public static long agora() {
+    return System.currentTimeMillis() + desvio;
+  }
+
+  static final String ACAO_SAIDA = "br.tijolo.ponte.SAIDA";
+  static final String ACAO_VIGIA = "br.tijolo.ponte.VIGIA";
+  static final long VIGIA_MS = 30 * 60 * 1000;
 
   public static SharedPreferences opcoes(Context c) {
     return c.getSharedPreferences("ponte", Context.MODE_PRIVATE);
@@ -72,6 +86,7 @@ public final class Ponte {
   }
 
   private static Conversas conversas;
+  private static Saida saida;
 
   /** A tabela de conversas (uma só para o app todo) */
   public static synchronized Conversas conversas(Context c) {
@@ -92,9 +107,35 @@ public final class Ponte {
     return conversas;
   }
 
+  /** A caixa de saída (gravada na hora: uma SMS na fila não se perde) */
+  public static synchronized Saida saida(Context c) {
+    if (saida == null) {
+      final Context app = c.getApplicationContext();
+      saida = new Saida(new Saida.Guarda() {
+        @Override
+        public String ler() {
+          return app.getSharedPreferences("saida", Context.MODE_PRIVATE).getString("fila", "");
+        }
+
+        @Override
+        public void gravar(String conteudo) {
+          app.getSharedPreferences("saida", Context.MODE_PRIVATE).edit().putString("fila", conteudo).commit();
+        }
+      });
+    }
+    return saida;
+  }
+
   public static boolean ehWhatsApp(String pacote) {
     for (String p : PACOTES_WHATSAPP)
       if (p.equals(pacote)) return true;
+    return false;
+  }
+
+  public static boolean ehNomeDoApp(String s) {
+    if (s == null) return false;
+    for (String n : NOMES_DO_APP)
+      if (n.equalsIgnoreCase(s.trim())) return true;
     return false;
   }
 
@@ -108,14 +149,80 @@ public final class Ponte {
   }
 
   /**
-   * O mesmo telefone? "+5511988887777", "011988887777" e "988887777" são o
-   * mesmo: compara os últimos 9 dígitos (8, se um deles for mais curto).
+   * O número do Tijolo como digitado, arrumado: "+55 11 98888-7777" →
+   * "+5511988887777"; "11 98888-7777" → "11988887777". null se curto demais.
+   */
+  public static String arrumarNumero(String digitado) {
+    final String d = digitos(digitado);
+    if (d.length() < 10) return null;
+    final boolean mais = digitado.trim().startsWith("+");
+    if (mais || (d.startsWith("55") && (d.length() == 12 || d.length() == 13))) return "+" + d;
+    return d;
+  }
+
+  /**
+   * O mesmo telefone? "+5511988887777", "011988887777" e "11988887777" são
+   * o mesmo: compara os últimos 11 dígitos (DDD + número; 10 se um deles
+   * for mais curto). Sem o DDD não vale: outro DDD é outro telefone.
    */
   public static boolean mesmoNumero(String a, String b) {
     final String x = digitos(a), y = digitos(b);
-    if (x.length() < 8 || y.length() < 8) return false;
-    final int n = Math.min(9, Math.min(x.length(), y.length()));
+    final int n = Math.min(11, Math.min(x.length(), y.length()));
+    if (n < 10) return false;
     return x.substring(x.length() - n).equals(y.substring(y.length() - n));
+  }
+
+  // ----------------------------------------------------------------------
+  // SMS para o Tijolo: tudo passa pela caixa de saída
+  // ----------------------------------------------------------------------
+
+  /** Põe na fila e tenta mandar já. */
+  public static void enviar(Context c, String texto) {
+    saida(c).adicionar(texto, agora());
+    esvaziarSaida(c);
+  }
+
+  /** Manda o que der (o limite por minuto, as esperas depois de falha); agenda o resto. */
+  public static void esvaziarSaida(Context c) {
+    final Saida s = saida(c);
+    while (true) {
+      final long agora = agora();
+      final Saida.Item i = s.proxima(agora);
+      if (i == null) {
+        final long quando = s.proximaHora(agora);
+        if (quando > 0) agendar(c, ACAO_SAIDA, quando);
+        return;
+      }
+      final String numero = numeroTijolo(c);
+      if (digitos(numero).length() < 10) {
+        registrar(c, "Sem o número do Tijolo: a SMS espera na fila.");
+        agendar(c, ACAO_SAIDA, agora + 10 * 60 * 1000);
+        return;
+      }
+      final SmsManager sms = SmsManager.getDefault();
+      final ArrayList<String> partes = sms.divideMessage(i.texto);
+      if (!s.cabe(partes.size(), agora)) {
+        agendar(c, ACAO_SAIDA, s.quandoCabe(agora) + 500);
+        return;
+      }
+      try {
+        final ArrayList<PendingIntent> avisos = new ArrayList<>();
+        final int imutavel = Build.VERSION.SDK_INT >= 23 ? 0x04000000 /* FLAG_IMMUTABLE */ : 0;
+        for (int p = 0; p < partes.size(); p++) {
+          final Intent it = new Intent(c, SmsEnviada.class);
+          it.putExtra("id", i.id);
+          it.putExtra("resumo", resumo(i.texto));
+          it.putExtra("parte", p + 1);
+          it.putExtra("partes", partes.size());
+          avisos.add(PendingIntent.getBroadcast(c, proximoCodigo(), it, PendingIntent.FLAG_UPDATE_CURRENT | imutavel));
+        }
+        s.enviando(i, partes.size(), agora);
+        sms.sendMultipartTextMessage(numero, null, partes, avisos, null);
+      } catch (Exception e) {
+        registrar(c, "Erro ao mandar SMS: " + e.getMessage());
+        s.resultado(i.id, false, agora);
+      }
+    }
   }
 
   private static int codigo = (int) (System.currentTimeMillis() & 0xFFFFFF);
@@ -124,30 +231,34 @@ public final class Ponte {
     return ++codigo & 0x7FFFFFFF;
   }
 
-  /** Manda uma SMS (em partes, se for longa) e anota no registro. */
-  public static boolean enviarSms(Context c, String numero, String texto) {
-    if (numero == null || digitos(numero).length() < 8) {
-      registrar(c, "Sem o número do Tijolo: não mandei \"" + resumo(texto) + "\"");
-      return false;
-    }
+  /** Acorda o app em `quando` (hora do relógio), mesmo com o Android dormindo */
+  static void agendar(Context c, String acao, long quando) {
+    final AlarmManager am = (AlarmManager) c.getSystemService(Context.ALARM_SERVICE);
+    if (am == null) return;
+    final long daqui = Math.max(1000, quando - agora());
+    final PendingIntent pi = despertador(c, acao);
+    final long em = SystemClock.elapsedRealtime() + daqui;
     try {
-      final SmsManager sms = SmsManager.getDefault();
-      final ArrayList<String> partes = sms.divideMessage(texto);
-      final ArrayList<PendingIntent> avisos = new ArrayList<>();
-      final int imutavel = Build.VERSION.SDK_INT >= 23 ? 0x04000000 /* FLAG_IMMUTABLE */ : 0;
-      for (int i = 0; i < partes.size(); i++) {
-        final Intent it = new Intent(c, SmsEnviada.class);
-        it.putExtra("resumo", resumo(texto));
-        it.putExtra("parte", i + 1);
-        it.putExtra("partes", partes.size());
-        avisos.add(PendingIntent.getBroadcast(c, proximoCodigo(), it, PendingIntent.FLAG_UPDATE_CURRENT | imutavel));
-      }
-      sms.sendMultipartTextMessage(numero, null, partes, avisos, null);
-      return true;
+      if (Build.VERSION.SDK_INT >= 23) am.setExactAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, em, pi);
+      else am.setExact(AlarmManager.ELAPSED_REALTIME_WAKEUP, em, pi);
     } catch (Exception e) {
-      registrar(c, "Erro ao mandar SMS: " + e.getMessage());
-      return false;
+      am.set(AlarmManager.ELAPSED_REALTIME_WAKEUP, em, pi);
     }
+  }
+
+  /** A vigia: a cada 30 min confere se a ponte ainda ouve o WhatsApp e se sobrou SMS na fila */
+  static void agendarVigia(Context c) {
+    final AlarmManager am = (AlarmManager) c.getSystemService(Context.ALARM_SERVICE);
+    if (am == null) return;
+    am.setInexactRepeating(AlarmManager.ELAPSED_REALTIME_WAKEUP, SystemClock.elapsedRealtime() + VIGIA_MS,
+        VIGIA_MS, despertador(c, ACAO_VIGIA));
+  }
+
+  private static PendingIntent despertador(Context c, String acao) {
+    final Intent it = new Intent(c, Despertador.class);
+    it.setAction(acao);
+    final int imutavel = Build.VERSION.SDK_INT >= 23 ? 0x04000000 : 0;
+    return PendingIntent.getBroadcast(c, acao.hashCode(), it, PendingIntent.FLAG_UPDATE_CURRENT | imutavel);
   }
 
   static String resumo(String s) {
@@ -155,15 +266,19 @@ public final class Ponte {
     return u.length() > 40 ? u.substring(0, 40) + "..." : u;
   }
 
-  // ---------- registro: as últimas 40 linhas, para a tela do app ----------
+  static String hora(long quando) {
+    return new SimpleDateFormat("HH:mm", Locale.ROOT).format(new Date(quando));
+  }
+
+  // ---------- registro: as últimas 60 linhas, para a tela do app ----------
   public static synchronized void registrar(Context c, String linha) {
     final SharedPreferences p = opcoes(c);
     final String hora = new SimpleDateFormat("dd/MM HH:mm", Locale.ROOT).format(new Date());
     String r = hora + "  " + linha + "\n" + p.getString("registro", "");
     final String[] linhas = r.split("\n");
-    if (linhas.length > 40) {
+    if (linhas.length > 60) {
       final StringBuilder b = new StringBuilder();
-      for (int i = 0; i < 40; i++) b.append(linhas[i]).append('\n');
+      for (int i = 0; i < 60; i++) b.append(linhas[i]).append('\n');
       r = b.toString();
     }
     p.edit().putString("registro", r).apply();

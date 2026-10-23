@@ -12,11 +12,12 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * SMS chegando no Android. As que vêm do Tijolo são pedidos:
- *   "WA#7 texto"     responder na conversa 7
- *   "WA?"            a lista das conversas recentes
- *   "WA-" / "WA+"    pausar / voltar a repassar tudo
- *   "WA-7" / "WA+7"  silenciar / reativar a conversa 7
+ * SMS chegando no Android. As que vêm do Tijolo (o número com DDD) são
+ * pedidos:
+ *   "WA#7xk texto"     responder na conversa 7 (o código xk tem que bater)
+ *   "WA?"              a lista das conversas recentes
+ *   "WA-" / "WA+"      pausar / voltar a repassar tudo
+ *   "WA-7xk" / "WA+7xk"  silenciar / reativar a conversa 7
  * As outras SMS ficam com o app de mensagens do Android, como sempre.
  */
 public class SmsRecebido extends BroadcastReceiver {
@@ -26,8 +27,7 @@ public class SmsRecebido extends BroadcastReceiver {
     final SmsMessage[] ms = Telephony.Sms.Intents.getMessagesFromIntent(i);
     if (ms == null || ms.length == 0 || ms[0] == null) return;
     final String de = ms[0].getOriginatingAddress();
-    final String tijolo = Ponte.numeroTijolo(c);
-    if (!Ponte.mesmoNumero(de, tijolo)) return;
+    if (!Ponte.mesmoNumero(de, Ponte.numeroTijolo(c))) return;
     final StringBuilder b = new StringBuilder();
     for (SmsMessage m : ms)
       if (m != null && m.getMessageBody() != null) b.append(m.getMessageBody());
@@ -48,7 +48,7 @@ public class SmsRecebido extends BroadcastReceiver {
           return;
         }
         try {
-          tratar(c, p, tijolo);
+          tratar(c, p);
         } catch (Exception e) {
           Ponte.registrar(c, "Erro com o pedido do Tijolo: " + e);
         } finally {
@@ -58,14 +58,14 @@ public class SmsRecebido extends BroadcastReceiver {
     });
   }
 
-  private static void tratar(Context c, Protocolo.Pedido p, String tijolo) {
+  private static void tratar(Context c, Protocolo.Pedido p) {
     final Conversas conversas = Ponte.conversas(c);
     switch (p.tipo) {
       case RESPOSTA: {
-        final String erro = Ouvinte.responder(c, p.conversa, p.texto);
+        final String erro = Ouvinte.responder(c, p.conversa, p.codigo, p.texto);
         if (erro != null) {
           Ponte.registrar(c, "Não respondi: " + erro);
-          Ponte.enviarSms(c, tijolo, Protocolo.aviso(primeiraMaiuscula(erro)));
+          Ponte.enviar(c, Protocolo.aviso(primeiraMaiuscula(erro)));
         }
         break;
       }
@@ -73,35 +73,39 @@ public class SmsRecebido extends BroadcastReceiver {
         final List<String[]> v = new ArrayList<>();
         for (Conversas.Entrada e : conversas.recentes(10)) {
           final String t = e.titulo + (Ponte.silenciada(c, e.chave) ? " (silenciada)" : "");
-          v.add(new String[] {String.valueOf(e.numero), t});
+          v.add(new String[] {String.valueOf(e.numero), Protocolo.codigo(e.chave), t});
         }
-        Ponte.enviarSms(c, tijolo, Protocolo.lista(v));
+        Ponte.enviar(c, Protocolo.lista(v));
         Ponte.registrar(c, "O Tijolo pediu a lista das conversas.");
         break;
       }
       case PAUSAR:
         Ponte.opcoes(c).edit().putBoolean("ligada", false).apply();
         Ponte.registrar(c, "Pausada pelo Tijolo (WA-).");
-        Ponte.enviarSms(c, tijolo, Protocolo.aviso("Ponte pausada: o WhatsApp não vem para o Tijolo até você mandar WA+"));
+        Ponte.enviar(c, Protocolo.aviso("Ponte pausada: o WhatsApp não vem para o Tijolo até você mandar WA+"));
         break;
       case RETOMAR:
         Ponte.opcoes(c).edit().putBoolean("ligada", true).apply();
         Ponte.registrar(c, "Ligada de novo pelo Tijolo (WA+).");
-        Ponte.enviarSms(c, tijolo, Protocolo.aviso("Ponte ligada de novo."));
+        Ponte.enviar(c, Protocolo.aviso("Ponte ligada de novo."));
         break;
       case SILENCIAR:
       case REATIVAR: {
         final String chave = conversas.chave(p.conversa);
         if (chave == null) {
-          Ponte.enviarSms(c, tijolo, Protocolo.aviso("Não conheço a conversa " + p.conversa + ". Mande WA? para ver a lista."));
+          Ponte.enviar(c, Protocolo.aviso("Não conheço a conversa " + p.conversa + ". Mande WA? para ver a lista."));
+          break;
+        }
+        final String t = conversas.titulo(p.conversa);
+        if (p.codigo != null && !p.codigo.equals(Protocolo.codigo(chave))) {
+          Ponte.enviar(c, Protocolo.aviso("A conversa " + p.conversa + " agora é outra (" + t + "): não mexi nela."));
           break;
         }
         final boolean silenciar = p.tipo == Protocolo.Pedido.Tipo.SILENCIAR;
         Ponte.silenciar(c, chave, silenciar);
-        final String t = conversas.titulo(p.conversa);
         Ponte.registrar(c, (silenciar ? "Silenciada pelo Tijolo: " : "Reativada pelo Tijolo: ") + t);
-        Ponte.enviarSms(c, tijolo, Protocolo.aviso(silenciar
-            ? t + " silenciada: as mensagens dela não vêm mais (WA+" + p.conversa + " para voltar)."
+        Ponte.enviar(c, Protocolo.aviso(silenciar
+            ? t + " silenciada: as mensagens dela não vêm mais (Reativar a conversa, no Tijolo, volta)."
             : t + " volta a vir para o Tijolo."));
         break;
       }

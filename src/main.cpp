@@ -350,10 +350,19 @@ public:
     avisar("Ligando para " + num + "...");
     return modem.ligar(num);
   }
-  bool atender() override { return modem.atender(); }
-  bool encerrar() override { return modem.desligar(); }
+  bool atender() override {
+    _erro.clear();
+    return modem.atender();
+  }
+  bool encerrar() override {
+    _erro.clear();
+    return modem.desligar();
+  }
   void tom(char t) override { modem.tons(String(t)); }
-  bool ussd(const std::string& c) override { return modem.ussd(String(c.c_str())); }
+  bool ussd(const std::string& c) override {
+    _erro.clear();
+    return modem.ussd(String(c.c_str()));
+  }
   void cancelarUssd() override { modem.cancelarUssd(); }
   void volume(int v) override {
     modem.volume(v);
@@ -370,7 +379,7 @@ public:
   bool enviarSms(const std::string& n, const std::string& t) override {
     _erro.clear();
     String num, texto = t.c_str();
-    if (whatsapp::ehEndereco(n)) {       // WhatsApp: vai para a ponte, com o "WA#7 " na frente
+    if (whatsapp::ehEndereco(n)) {       // WhatsApp: vai para a ponte, com o "WA#7xk " na frente
       if (ponteWhatsApp.isEmpty()) {
         _erro = "o Tijolo não sabe o número da ponte do WhatsApp (comando ponte no Monitor Serial)";
         avisar("Sem a ponte do WhatsApp: use o comando ponte <número>.");
@@ -390,7 +399,7 @@ public:
     return ok;
   }
   std::string numeroCompleto(const std::string& n) override {
-    if (whatsapp::ehEndereco(n)) return n;   // "WA#7 Maria" fica como está
+    if (whatsapp::ehEndereco(n)) return n;   // "WA#7xk Maria" fica como está
     return normalizarNumero(String(n.c_str())).c_str();
   }
 } telefone;
@@ -729,8 +738,8 @@ void listarCaixa(bool tudo) {
 // caixa como novo, aparece na tela e sai do chip.
 bool jaNaCaixa(const std::string& numero, const std::string& dataHora, const std::string& texto, int quantas);
 
-// SMS da Ponte do WhatsApp (o Android em casa): "WA#7 Maria\ntexto" vira
-// uma mensagem de "WA#7 Maria" (a tela mostra "Maria", e responder volta
+// SMS da Ponte do WhatsApp (o Android em casa): "WA#7xk Maria\ntexto" vira
+// uma mensagem de "WA#7xk Maria" (a tela mostra "Maria", e responder volta
 // pela ponte); os avisos dela ficam como da "WA". As outras, como vieram.
 void traduzirDaPonte(std::string& numero, std::string& texto) {
   if (ponteWhatsApp.isEmpty() || !whatsapp::mesmoNumero(numero, ponteWhatsApp.c_str())) return;
@@ -1309,13 +1318,15 @@ void executar(String linha) {
       else falhou("enviar SMS à ponte");
       return;
     }
-    const String n = normalizarNumero(resto);
+    String n = normalizarNumero(resto);
     int digitos = 0;
     for (unsigned i = 0; i < n.length(); i++) digitos += isdigit((unsigned char)n[i]) ? 1 : 0;
-    if (digitos < 8 || digitos != (int)n.length() - (n.startsWith("+") ? 1 : 0)) {
+    if (digitos < 10 || digitos != (int)n.length() - (n.startsWith("+") ? 1 : 0)) {
       Serial.println("Escreva só o número, com DDD: ponte 11977776666");
       return;
     }
+    // "5511977776666" (o 55 sem o +) é o número com o código do país
+    if (!n.startsWith("+") && n.startsWith("55") && (digitos == 12 || digitos == 13)) n = "+" + n;
     ponteWhatsApp = n;
     memoria.putString("ponte", n);
     Serial.println("Ponte do WhatsApp: " + n + ". As SMS dela no formato WA#... viram mensagens do WhatsApp.");

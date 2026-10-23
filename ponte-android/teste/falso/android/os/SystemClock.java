@@ -21,6 +21,10 @@ public final class SystemClock {
 
   static synchronized void agendar(Runnable r, long quando) { fila.add(new Tarefa(quando, seq++, r)); }
 
+  public static void agendarTarefa(Runnable r, long quando) { agendar(r, quando); }
+
+  public static void tirarTarefa(Runnable r) { tirar(r); }
+
   static synchronized void tirar(Runnable r) {
     for (int i = fila.size() - 1; i >= 0; i--) if (fila.get(i).r == r) fila.remove(i);
   }

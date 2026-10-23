@@ -45,7 +45,7 @@ constexpr int SMS_MAXIMO_DE_PARTES = 6;
 
 // ---------- WhatsApp (Fase 4) ----------
 // O número do chip do Android que roda a Ponte do Tijolo (ponte-android/).
-// As SMS dele no formato da ponte ("WA#7 Maria...") viram mensagens do
+// As SMS dele no formato da ponte ("WA#7xk Maria...") viram mensagens do
 // WhatsApp, e as respostas voltam por ele. "" = sem ponte. Também dá para
 // configurar sem gravar o firmware de novo: comando "ponte <número>" no
 // Monitor Serial (fica guardado e vale mais que este).
