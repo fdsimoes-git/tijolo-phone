@@ -1,0 +1,7 @@
+# PlatformIO: compilação e bibliotecas baixadas
+.pio/
+.vscode/
+
+# Gerados pelos testes no computador
+test_host/saida/
+test_host/toque.wav
