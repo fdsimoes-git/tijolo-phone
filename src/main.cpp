@@ -41,6 +41,7 @@
 #include <TelaIli9341.h>
 #include <Texto.h>
 #include <Toque.h>
+#include <WhatsApp.h>
 
 Modem modem;
 pdu::Montador montador;                  // junta as partes de SMS longos que chegam
@@ -52,6 +53,7 @@ bool temTela = false;
 Teclado teclado;
 Interface ui;
 Preferences memoria;                     // guarda o mapa do teclado e o volume
+String ponteWhatsApp;                    // o número do Android da Ponte do WhatsApp ("" = sem ponte)
 bool modemOk = false;
 bool mostrarTeclas = false;              // comando "teclado teste"
 uint32_t ultimaTecla = 0;
@@ -339,8 +341,11 @@ void apagarDoChip(const std::vector<int>& posicoes) {
 //  O que a interface pede ao aparelho
 // ============================================================
 class TelefoneReal : public Telefone {
+  std::string _erro;                     // erro que não é do modem ("sem a ponte do WhatsApp")
 public:
   bool ligar(const std::string& n) override {
+    _erro.clear();
+    if (whatsapp::ehEndereco(n)) { _erro = "não dá para ligar pelo WhatsApp"; return false; }
     const String num = normalizarNumero(String(n.c_str()));
     avisar("Ligando para " + num + "...");
     return modem.ligar(num);
@@ -355,7 +360,7 @@ public:
     memoria.putUChar("volume", (uint8_t)v);
   }
   std::string imei() override { return modem.imei().c_str(); }
-  std::string erro() override { return modem.ultimoErro().c_str(); }
+  std::string erro() override { return _erro.empty() ? std::string(modem.ultimoErro().c_str()) : _erro; }
   void aprenderTeclado(bool sim) override { teclado.aprender(sim); }
   void salvarTeclado(const uint8_t m[Teclado::TECLAS]) override {
     teclado.definirMapa(m);
@@ -363,15 +368,31 @@ public:
     avisar("Mapa do teclado guardado.");
   }
   bool enviarSms(const std::string& n, const std::string& t) override {
-    const String num = normalizarNumero(String(n.c_str()));
-    avisar("Enviando SMS para " + num + "...");
+    _erro.clear();
+    String num, texto = t.c_str();
+    if (whatsapp::ehEndereco(n)) {       // WhatsApp: vai para a ponte, com o "WA#7 " na frente
+      if (ponteWhatsApp.isEmpty()) {
+        _erro = "o Tijolo não sabe o número da ponte do WhatsApp (comando ponte no Monitor Serial)";
+        avisar("Sem a ponte do WhatsApp: use o comando ponte <número>.");
+        return false;
+      }
+      num = ponteWhatsApp;
+      texto = whatsapp::textoParaPonte(n, t).c_str();
+      avisar("WhatsApp: " + String(n.c_str()) + " (pela ponte " + num + ")...");
+    } else {
+      num = normalizarNumero(String(n.c_str()));
+      avisar("Enviando SMS para " + num + "...");
+    }
     int partes = 0;
-    const bool ok = modem.enviarSms(num, String(t.c_str()), &partes);
+    const bool ok = modem.enviarSms(num, texto, &partes);
     if (ok) avisar("SMS enviado" + (partes > 1 ? " em " + String(partes) + " partes" : String("")) + ".");
     else avisar("O SMS não foi: " + modem.ultimoErro());
     return ok;
   }
-  std::string numeroCompleto(const std::string& n) override { return normalizarNumero(String(n.c_str())).c_str(); }
+  std::string numeroCompleto(const std::string& n) override {
+    if (whatsapp::ehEndereco(n)) return n;   // "WA#7 Maria" fica como está
+    return normalizarNumero(String(n.c_str())).c_str();
+  }
 } telefone;
 
 // Acesso aos pinos para o Teclado
@@ -556,6 +577,9 @@ void ajuda() {
     "  chip                   SMS que estão no chip (normalmente nenhum: vão para a memória)\n"
     "  chip importar | chip ler <posição> | chip apagar <posição>|tudo\n"
     "  caixa formatar         apaga a memória das mensagens (só se ela não montar)\n"
+    "  ponte <numero>         o número do Android da Ponte do WhatsApp (ponte-android/)\n"
+    "  ponte                  mostra a ponte; ponte apagar: sem ponte\n"
+    "  ponte lista|pausar|retomar   pede à ponte a lista de conversas, ou pausa/retoma tudo\n"
     "  ussd <codigo>          saldo e recarga: ussd *222#  (menu: ussd 1)\n"
     "  volume <0-7> | mic <0-7> | vivavoz sim|nao\n"
     "  toque instalar         grava o trrrim no modem (uma vez só)\n"
@@ -596,6 +620,8 @@ void status() {
                   (unsigned)(PastaLittleFS::total() / 1024));
   else
     Serial.println(" · NA RAM (a flash não montou: some ao desligar)");
+  if (ponteWhatsApp.length()) Serial.println("WhatsApp:  ponte no " + ponteWhatsApp);
+  else Serial.println("WhatsApp:  sem ponte (comando ponte <número>)");
   int usados, total;
   if (modem.ocupacaoSms(usados, total))
     Serial.printf("Chip:      %d de %d posições de SMS ocupadas\n", usados, total);
@@ -703,14 +729,27 @@ void listarCaixa(bool tudo) {
 // caixa como novo, aparece na tela e sai do chip.
 bool jaNaCaixa(const std::string& numero, const std::string& dataHora, const std::string& texto, int quantas);
 
+// SMS da Ponte do WhatsApp (o Android em casa): "WA#7 Maria\ntexto" vira
+// uma mensagem de "WA#7 Maria" (a tela mostra "Maria", e responder volta
+// pela ponte); os avisos dela ficam como da "WA". As outras, como vieram.
+void traduzirDaPonte(std::string& numero, std::string& texto) {
+  if (ponteWhatsApp.isEmpty() || !whatsapp::mesmoNumero(numero, ponteWhatsApp.c_str())) return;
+  std::string n, t;
+  if (whatsapp::daPonte(texto, n, t)) {
+    numero = n;
+    texto = t;
+  }
+}
+
 void entregarSms(const pdu::Mensagem& m, const std::vector<int>& posicoes, const char* nota) {
-  std::string texto = m.texto;
+  std::string numero = m.numero, texto = m.texto;
+  traduzirDaPonte(numero, texto);
   if (nota && nota[0]) texto += std::string("\n[") + nota + "]";
-  if (jaNaCaixa(m.numero, m.dataHora, texto, 10)) {     // a mesma de novo (já guardada ao ligar)
+  if (jaNaCaixa(numero, m.dataHora, texto, 10)) {       // a mesma de novo (já guardada ao ligar)
     if (podeApagarDoChip()) apagarDoChip(posicoes);
     return;
   }
-  const uint32_t id = ui.mensagem(m.numero, m.dataHora, texto, millis());
+  const uint32_t id = ui.mensagem(numero, m.dataHora, texto, millis());
   if (!id) {
     avisar("A mensagem não coube na memória do Tijolo: ficou no chip (posição " + listaDeIndices(posicoes) + ").");
     return;
@@ -815,7 +854,9 @@ void importarDoChip(bool manual) {
   });
   int novas = 0, lidas = 0, repetidas = 0, ficaram = 0;
   for (const auto& p : prontas) {
-    if (jaNaCaixa(p.msg.numero, p.msg.dataHora, p.msg.texto, 30)) {
+    std::string numero = p.msg.numero, texto = p.msg.texto;
+    traduzirDaPonte(numero, texto);
+    if (jaNaCaixa(numero, p.msg.dataHora, texto, 30)) {
       repetidas++;
     } else {
       bool nova = true;
@@ -823,7 +864,7 @@ void importarDoChip(bool manual) {
         nova = false;
         for (int i : p.indices) nova = nova || naoLidas.count(i) > 0;
       }
-      if (!caixa.guardar(nova ? Caixa::Nova : Caixa::Lida, p.msg.numero, p.msg.dataHora, p.msg.texto)) {
+      if (!caixa.guardar(nova ? Caixa::Nova : Caixa::Lida, numero, p.msg.dataHora, texto)) {
         ficaram++;
         continue;                                       // não coube: fica no chip
       }
@@ -1244,6 +1285,41 @@ void executar(String linha) {
     // Fica na caixa, como as enviadas pela tela
     caixa.guardar(ok ? Caixa::Enviada : Caixa::NaoEnviada, n.c_str(), dataHoraAgora(), t.c_str());
     ui.caixaMudou(millis());
+    return;
+  }
+  if (cmd == "ponte") {                         // a Ponte do WhatsApp (o Android em casa)
+    if (resto.isEmpty()) {
+      if (ponteWhatsApp.isEmpty()) Serial.println("Sem ponte do WhatsApp. Configure: ponte <número do chip do Android>");
+      else Serial.println("Ponte do WhatsApp: " + ponteWhatsApp + ". Teste: ponte lista");
+      return;
+    }
+    if (resto == "apagar") {
+      memoria.remove("ponte");
+      ponteWhatsApp = PONTE_WHATSAPP;
+      if (ponteWhatsApp.isEmpty()) Serial.println("Sem ponte do WhatsApp.");
+      else Serial.println("Voltou a do config.h: " + ponteWhatsApp);
+      return;
+    }
+    if (resto == "lista" || resto == "pausar" || resto == "retomar") {
+      if (ponteWhatsApp.isEmpty()) { Serial.println("Primeiro: ponte <número>"); return; }
+      const char* c = resto == "lista" ? whatsapp::LISTA : resto == "pausar" ? whatsapp::PAUSAR : whatsapp::RETOMAR;
+      Serial.println(String("Pedindo à ponte (") + c + ")... a resposta chega como mensagem.");
+      int partes = 0;
+      if (modem.enviarSms(ponteWhatsApp, c, &partes)) Serial.println("ok");
+      else falhou("enviar SMS à ponte");
+      return;
+    }
+    const String n = normalizarNumero(resto);
+    int digitos = 0;
+    for (unsigned i = 0; i < n.length(); i++) digitos += isdigit((unsigned char)n[i]) ? 1 : 0;
+    if (digitos < 8 || digitos != (int)n.length() - (n.startsWith("+") ? 1 : 0)) {
+      Serial.println("Escreva só o número, com DDD: ponte 11977776666");
+      return;
+    }
+    ponteWhatsApp = n;
+    memoria.putString("ponte", n);
+    Serial.println("Ponte do WhatsApp: " + n + ". As SMS dela no formato WA#... viram mensagens do WhatsApp.");
+    Serial.println("No app Ponte do Tijolo (no Android), ponha o número DESTE chip. Teste: ponte lista");
     return;
   }
   if (cmd == "lista") { listarCaixa(resto == "tudo"); return; }
@@ -1689,11 +1765,12 @@ void setup() {
   digitalWrite(PINO_SD_CS, HIGH);         // o cartão SD da placa fica fora da conversa
   analogReadResolution(12);
   memoria.begin("tijolo", false);
+  ponteWhatsApp = memoria.isKey("ponte") ? memoria.getString("ponte", "") : String(PONTE_WHATSAPP);
   // Medição do 3V3 para o diagnóstico (só com o resistor no IO2): começa
   // antes do modem, para pegar o que acontece quando ele liga.
   medidor.begin(PINO_MEDIR_3V3, PINO_BATERIA);
 
-  Serial.println(F("\n=== Tijolo · Fase 2: tela, teclado e botões ==="));
+  Serial.println(F("\n=== Tijolo · Fase 4: SMS, caixa de mensagens e WhatsApp (pela ponte) ==="));
 
   // Memória. A PSRAM pode perder os dados quando a alimentação oscila (o
   // modem e o alto-falante puxando corrente), sem a ESP32 reiniciar. Por

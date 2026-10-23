@@ -133,14 +133,19 @@ public:
   static bool ehCodigoUssd(const std::string& s);
   // Dá para ligar ou responder? (dígitos, com um "+" no começo; "TIM" não)
   static bool ehNumero(const std::string& n);
+  // Dá para responder? (um número ou uma conversa do WhatsApp, "WA#7 Maria")
+  static bool podeResponder(const std::string& n);
   // O erro do modem em português ("+CMS ERROR: 330" → "o chip não tem...")
   static std::string explicarErro(const std::string& e);
 
 private:
   struct Perdida { std::string numero, quando; };
-  enum class Acao : uint8_t { Nenhuma, Ligar, Ussd, EnviarSms };
+  enum class Acao : uint8_t { Nenhuma, Ligar, Ussd, EnviarSms, Comando };
   enum class Item : uint8_t { Escrever, Rascunho, Mensagens, Rediscar };
-  enum class Opcao : uint8_t { Responder, Ligar, Encaminhar, TentarDeNovo, Editar, Apagar, Continuar };
+  enum class Opcao : uint8_t {
+    Responder, Ligar, Encaminhar, TentarDeNovo, Editar, Apagar, Continuar,
+    Silenciar, Reativar, Pausar, Retomar      // pedidos à ponte do WhatsApp
+  };
 
   void _ir(Tela t, uint32_t agora);
   void _acordar(uint32_t agora) { _atividade = agora; }
@@ -176,6 +181,8 @@ private:
   void _abrirMensagem(uint32_t id, Tela volta, bool marcarJa, uint32_t agora);
   void _marcarLida();
   void _executarOpcao(Opcao o, uint32_t agora);
+  // Um pedido à ponte do WhatsApp ("WA-7"): sai por SMS e não fica na caixa
+  void _pedirAPonte(const std::string& comando, const std::string& feito, uint32_t agora);
   uint32_t _novaMaisRecente() const;
 
   // teclas, por tela
@@ -269,6 +276,7 @@ private:
   uint32_t _substituir = 0;       // a mensagem da caixa (não enviada ou rascunho) que este texto substitui
   Tela _escreverVolta = Tela::Menu;
   std::string _envioPara, _envioTexto, _envioErro;
+  std::string _pedidoFeito;       // o aviso depois de um pedido à ponte do WhatsApp
   uint32_t _envioId = 0, _envioSubstitui = 0;
   bool _envioOk = false, _envioDoEditor = false;
   int _envioPartes = 1;

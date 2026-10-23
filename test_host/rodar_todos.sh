@@ -36,9 +36,10 @@ testar modem -I test_host/shim -I lib/Texto -I lib/Pdu -I lib/Modem test_host/mo
 testar teclado -I lib/Teclado test_host/teclado_test.cpp lib/Teclado/Teclado.cpp
 testar caixa -I lib/Caixa test_host/caixa_test.cpp lib/Caixa/Caixa.cpp
 testar multitoque -I lib/Texto -I lib/Escrita test_host/multitoque_test.cpp lib/Escrita/Multitoque.cpp
+testar whatsapp -I lib/WhatsApp test_host/whatsapp_test.cpp lib/WhatsApp/WhatsApp.cpp
 testar interface -I lib/Texto -I lib/Tela -I lib/Teclado -I lib/Interface -I lib/Caixa -I lib/Escrita -I lib/Pdu \
-  test_host/interface_test.cpp lib/Tela/Quadro.cpp lib/Tela/Fontes.cpp lib/Teclado/Teclado.cpp \
-  lib/Caixa/Caixa.cpp lib/Escrita/Multitoque.cpp lib/Interface/Interface.cpp
+  -I lib/WhatsApp test_host/interface_test.cpp lib/Tela/Quadro.cpp lib/Tela/Fontes.cpp lib/Teclado/Teclado.cpp \
+  lib/Caixa/Caixa.cpp lib/Escrita/Multitoque.cpp lib/WhatsApp/WhatsApp.cpp lib/Interface/Interface.cpp
 testar diagnostico -I lib/Tela -I lib/Medidor -I lib/Memoria test_host/diagnostico_test.cpp
 testar vigia -I lib/Tela test_host/vigia_test.cpp
 

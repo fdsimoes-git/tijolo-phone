@@ -9,8 +9,9 @@ O firmware é o **TijoloOS**, feito por fases:
 | 1 | Modem: ligar, atender, SMS com acentos, USSD (saldo), toque — pelo Monitor Serial | pronta, testada na placa |
 | 2 | Tela ILI9341 + teclado 3×4 (o 1 e o 3, segurados, fazem as vezes dos botões verde e vermelho): tela inicial, discador, chamadas, SMS recebidos, saldo, liga/desliga | pronta, testada na placa |
 | 3a | Menu, escrever SMS pelo teclado (multitoque), caixa de mensagens na memória do Tijolo (ler, responder, encaminhar, apagar, reenviar) | pronta, testada na placa |
-| 3b | Agenda de contatos (na memória do Tijolo), histórico de chamadas, despertador | próxima |
-| 4 | Opcionais: modo roteador (compartilhar o 4G por Wi-Fi) e ponte do WhatsApp | |
+| 4 | **WhatsApp pela ponte**: um Android em casa, com o WhatsApp oficial, repassa as mensagens por SMS e devolve as respostas (app em [`ponte-android/`](ponte-android/README.md)) | pronta, falta testar na placa |
+| 3b | Agenda de contatos (na memória do Tijolo), histórico de chamadas, despertador | depois |
+| — | Modo roteador (compartilhar o 4G por Wi-Fi) | opcional |
 
 O Monitor Serial continua aceitando todos os comandos da Fase 1.
 
@@ -98,7 +99,7 @@ Se o teclado for trocado ou religado em outra ordem: segure o 1 enquanto aparece
 
 **Recebidas**: com o Tijolo na tela inicial, a mensagem nova abre sozinha; ela só conta como lida quando alguém toca numa tecla (se ninguém mexer, a tela apaga e ela continua nova). Na tela inicial fica o cartão das novidades: segure o 1 para ver (uma mensagem nova abre direto; várias, a lista) ou segure o 3 um pouco, menos de 1,6 s, para limpar a tela (as mensagens continuam marcadas como novas na lista).
 
-**Lendo**: o 2 e o 8 rolam o texto, o 1 segurado responde, o 5 abre as opções (responder, ligar, encaminhar, apagar; numa que não foi enviada: tentar de novo, editar e enviar) e o 3 segurado volta.
+**Lendo**: o 2 e o 8 rolam o texto, o 1 segurado responde, o 5 abre as opções (responder, ligar, encaminhar, apagar; numa que não foi enviada: tentar de novo, editar e enviar; numa do WhatsApp: silenciar e reativar a conversa) e o 3 segurado volta.
 
 **Onde elas ficam**: na memória flash do Tijolo (a partição de dados de 3,4 MB, com o sistema de arquivos LittleFS), até 500 mensagens (`CAIXA_MAXIMO`); cheia, sai a mais antiga já lida. Depois de guardada, a mensagem sai do chip, que guarda poucas e, cheio, para de receber (`APAGAR_SMS_DO_CHIP` no `config.h`). Gravar um firmware novo não apaga as mensagens (só o "Erase Flash" do PlatformIO apagaria).
 
@@ -117,6 +118,38 @@ Se o teclado for trocado ou religado em outra ordem: segure o 1 enquanto aparece
 9. **Desligar e ligar** (segure o 3 na tela inicial): as mensagens continuam lá, nas mesmas condições (novas e lidas).
 
 Se algo der errado, mande o que o monitor mostrou (e `lista` e `chip`).
+
+## WhatsApp pela ponte (Fase 4)
+
+O WhatsApp não roda no Tijolo. Então um **Android antigo fica em casa** (na tomada e no Wi-Fi) com o WhatsApp oficial e o app **Ponte do Tijolo**. Quando chega mensagem, a ponte lê a notificação e manda uma SMS para o Tijolo. Quando você responde no Tijolo, a ponte responde no WhatsApp pelo botão "Responder" da notificação. A instalação do Android está em [`ponte-android/README.md`](ponte-android/README.md). No Tijolo, basta dizer qual é o número do chip da ponte:
+
+```
+ponte 11977776666
+```
+
+(ou `PONTE_WHATSAPP` no `config.h`).
+
+- **Chegando**: a mensagem aparece como as outras, com **WhatsApp** em verde e o nome da pessoa ou do grupo. Na lista, a prévia começa com "WhatsApp ·".
+- **Responder** é igual ao SMS. A tela "Enviar para" mostra o nome e "pelo WhatsApp". Um dígito ali troca a conversa por um número de telefone, e o # tira a conversa.
+- **Opções** (o 5, lendo): *Silenciar a conversa* e *Reativar a conversa* (para um grupo animado demais). Lendo um aviso da própria ponte: *Pausar o WhatsApp* e *Retomar o WhatsApp*. Esses pedidos vão por SMS à ponte e não ficam na caixa.
+- O tamanho máximo conta o `WA#7 ` que vai na frente da resposta.
+- Só dá para **responder**, não para começar conversa: a ponte precisa da notificação daquela conversa. Entre o Android e o Tijolo, as mensagens vão por **SMS comum**: a operadora consegue ler, e cada SMS é cobrada.
+
+Como o Tijolo reconhece: uma SMS **do número da ponte** que começa com `WA#7 Nome` vira uma mensagem de "WA#7 Nome". Esse endereço fica guardado na caixa e, na tela, vira só o nome. Responder a ele manda `WA#7 texto` ao número da ponte. Os avisos da ponte (`WA!`, `WA?`) ficam como da **Ponte do WhatsApp**. Uma SMS da ponte fora desse formato fica como SMS comum.
+
+### Roteiro de teste da Fase 4 (uns 20 minutos, depois de instalar a ponte)
+
+1. **Gravar o firmware** e, no monitor, `ponte <número do chip do Android>`. `status` mostra a linha `WhatsApp:  ponte no +55...`.
+2. No app da ponte, **Mandar uma SMS de teste ao Tijolo**. Chega uma mensagem da **Ponte do WhatsApp**.
+3. `ponte lista` no monitor. A ponte responde "Conversas no WhatsApp: nenhuma conversa ainda" (ou a lista).
+4. **Receber**: de outro celular, mande um WhatsApp para o seu número. Em uns 10 s chega no Tijolo, com "WhatsApp" em verde e o nome.
+5. **Responder** pelo Tijolo e conferir no outro celular. Mande 3 mensagens seguidas do outro celular: elas chegam juntas, numa SMS.
+6. **Emoji e foto**: mande 😂👍 e uma foto com legenda. Chegam `:D (ok)` e `[foto] legenda`.
+7. **Grupo**: ligue *Repassar também os grupos* no app e mande algo num grupo. Chega com "Nome: texto". No Tijolo, *Silenciar a conversa*: a ponte confirma e o grupo para de chegar. *Reativar a conversa* volta.
+8. **Resposta sem notificação**: no Android, abra a conversa no WhatsApp (a notificação some) e responda pelo Tijolo. Deve funcionar, porque a ponte guardou o botão. Depois reinicie o Android e responda de novo: chega o aviso "Não consigo responder a ... agora". Mande outra mensagem do outro celular e responda: volta a funcionar.
+9. **Pausar**: abra um aviso da ponte → 5 → *Pausar o WhatsApp*. Nada mais chega. *Retomar* volta.
+
+Se algo der errado, mande o que o monitor mostrou e a lista *Últimos acontecimentos* do app.
 
 ## O que cada tecla faz
 
@@ -155,6 +188,8 @@ A tela escurece depois de 15 s sem uso e apaga em 30 s; a primeira tecla depois 
 | `chip` | os SMS que estão no chip (normalmente nenhum); os longos aparecem inteiros, com as posições de cada parte (`[4,5]`) |
 | `chip importar` / `chip ler <posição>` / `chip apagar <posição>` / `chip apagar tudo` | leva os SMS do chip para a memória do Tijolo; lê ou apaga direto no chip |
 | `caixa formatar` | apaga a memória das mensagens e começa do zero (pede confirmação); só para quando ela não monta |
+| `ponte <número>` | o número do chip do Android da Ponte do WhatsApp (fica guardado); `ponte` mostra qual é; `ponte apagar` volta ao do `config.h` |
+| `ponte lista` / `ponte pausar` / `ponte retomar` | pede à ponte a lista de conversas (a resposta chega como mensagem), ou pausa/retoma o WhatsApp |
 | `ussd <código>` | saldo, recarga, menus da operadora; responda a um menu com `ussd 1` |
 | `volume <0-7>` / `mic <0-7>` | alto-falante e microfone (o volume fica guardado) |
 | `vivavoz sim/nao` | perfil de áudio do modem: viva-voz (bancada) ou fone no ouvido |
@@ -373,6 +408,8 @@ Se o modem reiniciar sozinho (bateria fraca, pico de corrente), ele esquece a co
 - `lib/Tela/EstadoTela.h`, `lib/Tela/VigiaTela.h` e `lib/Medidor/`: o diagnóstico da tela branca. O ILI9341 responde ao comando RDDST com 32 bits sobre si mesmo (acordada? imagem ligada? conversor interno ligado? formato, orientação); comparando com o que foi configurado, o Tijolo sabe se ela se perdeu e de que jeito. O Medidor lê o 3V3 e a bateria numa tarefa no outro núcleo da ESP32.
 - `lib/Interface/`: as telas e o que cada tecla faz em cada uma. Não sabe nada de fios nem de modem: pede "ligue para tal número" a uma classe `Telefone`, que o `main.cpp` implementa com o modem de verdade.
 - `lib/Escrita/`: o multitoque (cada tecla, várias letras; a mesma tecla de novo em menos de 1 s troca a letra), com os acentos do português, os modos Abc/abc/ABC/123 e o apagar letra a letra (os acentos ocupam 2 bytes em UTF-8).
+- `lib/WhatsApp/`: o formato das SMS da Ponte do WhatsApp. Traduz `WA#7 Maria` + texto para um endereço na caixa e põe o `WA#7 ` de volta na resposta. O `main.cpp` troca o endereço pelo número da ponte na hora de enviar.
+- `ponte-android/`: o app da ponte, em Java, para Android 5 ou mais novo. Ele ouve as notificações do WhatsApp, junta as mensagens seguidas, numera as conversas (de 1 a 999, sempre o mesmo número para a mesma conversa) e responde pelo botão da notificação.
 - `lib/Caixa/`: as mensagens, um arquivo pequeno por mensagem na partição de dados da flash (LittleFS). O estado (nova, lida, enviada, não enviada) está no nome do arquivo (`0000002a.n`), então marcar como lida é só renomear: se a energia cair no meio, fica o nome velho ou o novo, nunca meio arquivo.
 - `src/main.cpp`: liga tudo; a cada poucos segundos lê sinal, rede, operadora, bateria e hora (uma consulta por vez, nunca enquanto alguém digita) e cuida do sono profundo: um dos fios da tecla 3 (ou o botão vermelho) acorda a ESP32.
 
@@ -382,7 +419,8 @@ Se o modem reiniciar sozinho (bateria fraca, pico de corrente), ele esquece a co
 - `pdu_test`: montagem e leitura dos SMS. Também conferido contra uma biblioteca Python independente (`python-gsmmodem-new`, scripts em `test_host/pdu_referencia/`).
 - `modem_sim_test`: o `lib/Modem` contra um A7670 de mentira (chamadas, SMS, USSD, PIN, arquivo, modem que reinicia sozinho, IMEI, desligar, troca de 4G para 2G).
 - `teclado_test`: o teclado com os 7 fios embaralhados, contatos tremendo, duas teclas juntas, botões e o 1 e o 3 segurados no lugar deles.
-- `interface_test`: as telas com um telefone de mentira; cada tela vira uma imagem em `test_host/saida/telas/`. Também liga um Teclado de verdade (com fios de mentira) à interface: ligar, atender, encerrar e desligar só com o 1 e o 3. Na Fase 3: escrever pelo multitoque, enviar, falhar e tentar de novo, a lista, responder, apagar, o rascunho e o tamanho máximo.
+- `interface_test`: as telas com um telefone de mentira; cada tela vira uma imagem em `test_host/saida/telas/`. Também liga um Teclado de verdade (com fios de mentira) à interface: ligar, atender, encerrar e desligar só com o 1 e o 3. Na Fase 3: escrever pelo multitoque, enviar, falhar e tentar de novo, a lista, responder, apagar, o rascunho e o tamanho máximo. Na Fase 4: mensagem do WhatsApp, responder pela ponte, silenciar, os avisos da ponte e o tamanho máximo com o `WA#7 `.
+- `whatsapp_test`: o formato das SMS da ponte (endereços, o que vem e o que vai, o número da ponte).
 - `caixa_test`: a caixa de mensagens com uma pasta de mentira (guardar, marcar, apagar, religar, caixa cheia, falhas da memória).
 - `multitoque_test`: as letras, os acentos, as maiúsculas no começo da frase, os modos, segurar para o número, apagar e o limite.
 - `diagnostico_test`: a leitura do estado da tela (cada tipo de falha) e as janelas de tensão do Medidor.
@@ -394,14 +432,14 @@ Todos de uma vez (precisa só do g++), da raiz do projeto:
 sh test_host/rodar_todos.sh
 ```
 
-Cada linha de compilação está no começo do arquivo de teste e no `test_host/rodar_todos.sh`.
+Cada linha de compilação está no começo do arquivo de teste e no `test_host/rodar_todos.sh`. Os testes do app da ponte, em Java (a lógica e o caminho inteiro com um Android de mentira), rodam com `sh ponte-android/testar.sh`.
 
 ## WhatsApp e Uber
 
 Não rodam no ESP32: os dois só existem para Android/iPhone (o WhatsApp para KaiOS acabou em fevereiro de 2025), não há API oficial para conta pessoal, e clientes não oficiais do WhatsApp levam a banimento. Os caminhos possíveis estão na Fase 4:
 
 - **Modo roteador**: o tijolo compartilha o 4G por Wi-Fi para um tablet ou notebook (WhatsApp Web, Uber pelo navegador). É um exemplo oficial da Espressif (`ap_to_pppos`). A serial entre a ESP32 e o modem limita a velocidade a algumas centenas de kbps (os pinos de controle de fluxo da placa vêm desligados): dá para mensagens, mapa e Uber, não para vídeo.
-- **Ponte do WhatsApp**: um Android antigo em casa, com o WhatsApp oficial, encaminha as mensagens para o tijolo por SMS, e as respostas voltam pelo "responder" da notificação. A conta continua no app oficial.
+- **Ponte do WhatsApp** (pronta, veja [WhatsApp pela ponte](#whatsapp-pela-ponte-fase-4)): um Android antigo em casa, com o WhatsApp oficial, encaminha as mensagens para o tijolo por SMS, e as respostas voltam pelo "responder" da notificação. A conta continua no app oficial.
 
 ## Créditos
 

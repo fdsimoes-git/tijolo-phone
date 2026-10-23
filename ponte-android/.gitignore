@@ -1,0 +1,7 @@
+# O app montado e os testes
+saida/
+# A chave que assina o app: NUNCA no git (quem tiver a chave pode
+# instalar uma "atualização" que lê o seu WhatsApp). Guarde uma cópia à parte.
+chave/
+*.jks
+*.keystore

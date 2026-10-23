@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Ponte do Tijolo: WhatsApp (neste Android) <-> Tijolo, por SMS -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="br.tijolo.ponte"
+    android:versionCode="1"
+    android:versionName="1.0">
+
+  <uses-sdk android:minSdkVersion="21" android:targetSdkVersion="28" />
+
+  <uses-permission android:name="android.permission.SEND_SMS" />
+  <uses-permission android:name="android.permission.RECEIVE_SMS" />
+  <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+
+  <application
+      android:label="@string/nome"
+      android:icon="@drawable/icone"
+      android:allowBackup="false"
+      android:theme="@android:style/Theme.Material.Light">
+
+    <activity android:name=".Principal" android:exported="true">
+      <intent-filter>
+        <action android:name="android.intent.action.MAIN" />
+        <category android:name="android.intent.category.LAUNCHER" />
+      </intent-filter>
+    </activity>
+
+    <!-- Ouve as notificações (o WhatsApp); o Android o mantém ligado -->
+    <service
+        android:name=".Ouvinte"
+        android:label="@string/nome"
+        android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE"
+        android:exported="true">
+      <intent-filter>
+        <action android:name="android.service.notification.NotificationListenerService" />
+      </intent-filter>
+    </service>
+
+    <!-- SMS chegando: os pedidos do Tijolo -->
+    <receiver
+        android:name=".SmsRecebido"
+        android:permission="android.permission.BROADCAST_SMS"
+        android:exported="true">
+      <intent-filter android:priority="999">
+        <action android:name="android.provider.Telephony.SMS_RECEIVED" />
+      </intent-filter>
+    </receiver>
+
+    <!-- O resultado de cada SMS mandada ao Tijolo -->
+    <receiver android:name=".SmsEnviada" android:exported="false" />
+  </application>
+</manifest>

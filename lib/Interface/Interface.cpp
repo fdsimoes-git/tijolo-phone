@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <algorithm>
 #include "Pdu.h"
+#include "WhatsApp.h"
 
 using namespace fontes;
 
@@ -103,7 +104,10 @@ void Interface::begin(Telefone& tel, int volume, const char* const* nomesFios, u
   _sujo = true;
   // A letra que deixaria a mensagem maior que o máximo de SMS não entra
   // (no ciclo da tecla, ela é pulada)
-  _mt.limitar([this](const std::string& t) { return pdu::contar(t).partes <= _maxPartes; });
+  // (para o WhatsApp, conta também o "WA#7 " que vai na frente)
+  _mt.limitar([this](const std::string& t) {
+    return pdu::contar(whatsapp::textoParaPonte(_para, t)).partes <= _maxPartes;
+  });
 }
 
 uint32_t Interface::_relogioAgora(uint32_t antes) const {
@@ -360,6 +364,10 @@ bool Interface::_executar(uint32_t agora) {
     }
   } else if (a == Acao::EnviarSms) {
     _enviarAgora(agora);
+  } else if (a == Acao::Comando) {
+    const bool ok = _tel->enviarSms(whatsapp::PONTE, arg);
+    agora = _relogioAgora(agora);
+    aviso(ok ? _pedidoFeito : "Não consegui falar com a ponte: " + explicarErro(_tel->erro()) + ".", agora);
   }
   return true;
 }
@@ -752,7 +760,7 @@ void Interface::_digitar(char k, bool segurou, uint32_t agora) {
 }
 
 bool Interface::_cabeNoMaximo(const std::string& texto, uint32_t agora) {
-  const int partes = pdu::contar(texto).partes;
+  const int partes = pdu::contar(whatsapp::textoParaPonte(_para, texto)).partes;
   if (partes <= _maxPartes) return true;
   aviso("A mensagem tem " + std::to_string(partes) + " partes; o máximo é " + std::to_string(_maxPartes) +
             ". Apague um pouco.", agora);
@@ -798,12 +806,13 @@ void Interface::_teclaPara(const EventoTecla& ev, uint32_t agora) {
   const char k = ev.tecla;
   if (ev.tipo == EventoTecla::Apertou) {
     if (ehDigito(k)) {
+      if (whatsapp::ehEndereco(_para)) _para.clear();    // um número no lugar da conversa do WhatsApp
       if (_para.size() < 20) _para += k;
       _sujo = true;
     } else if (k == TECLA_VERDE) {
       int digitos = 0;
       for (char c : _para) digitos += ehDigito(c) ? 1 : 0;
-      if (digitos < 3) aviso("Digite o número de quem vai receber.", agora);
+      if (!whatsapp::ehEndereco(_para) && digitos < 3) aviso("Digite o número de quem vai receber.", agora);
       else if (_cabeNoMaximo(_mt.texto(), agora)) _enviar(_para, _mt.texto(), true, _substituir, agora);
     } else if (k == TECLA_VERMELHA) {
       _ir(Tela::Escrever, agora);
@@ -817,7 +826,8 @@ void Interface::_teclaPara(const EventoTecla& ev, uint32_t agora) {
       _sujo = true;
     }
   } else if (ev.tipo == EventoTecla::Soltou && k == '#' && !ev.segurada && !_para.empty()) {
-    _para.pop_back();
+    if (whatsapp::ehEndereco(_para)) _para.clear();      // a conversa sai inteira
+    else _para.pop_back();
     _sujo = true;
   }
 }
@@ -831,7 +841,7 @@ void Interface::_enviar(const std::string& numero, const std::string& texto, boo
   _envioTexto = texto;
   _envioDoEditor = doEditor;
   _envioSubstitui = substitui;
-  _envioPartes = pdu::contar(texto).partes;
+  _envioPartes = pdu::contar(whatsapp::textoParaPonte(numero, texto)).partes;
   _envioOk = false;
   _envioErro.clear();
   _envioId = 0;
@@ -959,14 +969,26 @@ std::vector<Interface::Opcao> Interface::_opcoes() const {
     v.push_back(Opcao::Apagar);
     return v;
   }
-  const bool numero = ehNumero(_msg.numero);
+  if (_msg.numero == whatsapp::PONTE) {              // aviso da própria ponte do WhatsApp
+    v.push_back(Opcao::Pausar);
+    v.push_back(Opcao::Retomar);
+    v.push_back(Opcao::Encaminhar);
+    v.push_back(Opcao::Apagar);
+    return v;
+  }
+  const bool numero = ehNumero(_msg.numero), wa = whatsapp::ehConversa(_msg.numero);
+  const bool recebida = _msg.estado == Caixa::Nova || _msg.estado == Caixa::Lida;
   if (_msg.estado == Caixa::NaoEnviada) {
-    if (numero) v.push_back(Opcao::TentarDeNovo);
+    if (numero || wa) v.push_back(Opcao::TentarDeNovo);
     v.push_back(Opcao::Editar);
-  } else if ((_msg.estado == Caixa::Nova || _msg.estado == Caixa::Lida) && numero) {
+  } else if (recebida && (numero || wa)) {
     v.push_back(Opcao::Responder);
   }
   if (numero) v.push_back(Opcao::Ligar);
+  if (wa && recebida) {
+    v.push_back(Opcao::Silenciar);
+    v.push_back(Opcao::Reativar);
+  }
   v.push_back(Opcao::Encaminhar);
   v.push_back(Opcao::Apagar);
   return v;
@@ -1010,7 +1032,26 @@ void Interface::_executarOpcao(Opcao o, uint32_t agora) {
       _substituir = _lendo;               // enviando (ou guardando de novo) a versão nova, esta sai
       break;
     case Opcao::Apagar: _ir(Tela::Apagar, agora); break;
+    case Opcao::Silenciar:
+      _pedirAPonte(whatsapp::silenciar(whatsapp::conversa(_msg.numero)),
+                   "Pedi à ponte: " + whatsapp::nome(_msg.numero) + " fica em silêncio.", agora);
+      break;
+    case Opcao::Reativar:
+      _pedirAPonte(whatsapp::reativar(whatsapp::conversa(_msg.numero)),
+                   "Pedi à ponte: " + whatsapp::nome(_msg.numero) + " volta a chegar.", agora);
+      break;
+    case Opcao::Pausar:
+      _pedirAPonte(whatsapp::PAUSAR, "Pedi à ponte para pausar o WhatsApp (Retomar volta).", agora);
+      break;
+    case Opcao::Retomar: _pedirAPonte(whatsapp::RETOMAR, "Pedi à ponte para retomar o WhatsApp.", agora); break;
   }
+}
+
+void Interface::_pedirAPonte(const std::string& comando, const std::string& feito, uint32_t agora) {
+  _pedidoFeito = feito;
+  _ir(Tela::Ler, agora);
+  aviso("Falando com a ponte do WhatsApp…", agora);
+  _pedir(Acao::Comando, comando);
 }
 
 void Interface::_teclaOpcoes(const EventoTecla& ev, uint32_t agora) {
@@ -1157,6 +1198,8 @@ void Interface::_parTeclado(uint8_t a, uint8_t b, uint32_t agora) {
 // ============================================================
 
 std::string Interface::formatarNumero(const std::string& n) {
+  if (whatsapp::ehConversa(n)) return whatsapp::nome(n) + " (WhatsApp)";
+  if (n == whatsapp::PONTE) return "Ponte do WhatsApp";
   std::string nac = n;
   if (n.size() > 3 && n.compare(0, 3, "+55") == 0) nac = n.substr(3);
   else if (!n.empty() && n[0] == '+') return n;               // de fora do Brasil
@@ -1177,6 +1220,8 @@ std::string Interface::formatarNumero(const std::string& n) {
 bool Interface::ehCodigoUssd(const std::string& s) {
   return s.size() >= 3 && (s[0] == '*' || s[0] == '#') && s.back() == '#';
 }
+
+bool Interface::podeResponder(const std::string& n) { return ehNumero(n) || whatsapp::ehConversa(n); }
 
 bool Interface::ehNumero(const std::string& n) {
   size_t i = (!n.empty() && n[0] == '+') ? 1 : 0;
@@ -1670,9 +1715,12 @@ void Interface::_desenharEscrever(Quadro& q) const {
     if (primeiro > 0) q.texto(L - 18, y0 + 9, "▲", fontePequena, cor::DISCRETO, Alinha::Centro);
   }
 
-  // Tamanho: letras usadas / cabem, e em quantos SMS vai
-  const pdu::Contagem c = pdu::contar(t);
-  std::string tam = std::to_string(c.usados) + "/" + std::to_string(c.porParte * c.partes);
+  // Tamanho: letras usadas / cabem, e em quantos SMS vai (para o WhatsApp,
+  // o "WA#7 " da frente ocupa espaço mas não aparece na conta)
+  const std::string envio = whatsapp::textoParaPonte(_para, t);
+  const int frente = (int)(envio.size() - t.size());
+  const pdu::Contagem c = pdu::contar(envio);
+  std::string tam = std::to_string(c.usados - frente) + "/" + std::to_string(c.porParte * c.partes - frente);
   if (c.partes > 1) tam = contagemDePartes(c.partes) + " · " + tam;
   q.texto(L - MARGEM, 287, tam, fontePequena, c.partes > 1 ? cor::AMBAR : cor::SUAVE, Alinha::Direita);
   q.texto(MARGEM, 287, "* modo   # apaga", fontePequena, cor::DISCRETO);
@@ -1684,6 +1732,10 @@ void Interface::_desenharPara(Quadro& q) const {
   q.texto(MARGEM, 52, "Enviar para", fontePequena, cor::SUAVE);
   if (_para.empty()) {
     q.texto(L / 2, 122, "Digite o número", fonteTexto, cor::DISCRETO, Alinha::Centro);
+  } else if (whatsapp::ehEndereco(_para)) {
+    q.texto(L / 2, 118, Quadro::caber(whatsapp::nome(_para), fonteGrande, L - 24), fonteGrande, cor::TEXTO,
+            Alinha::Centro);
+    q.texto(L / 2, 146, "pelo WhatsApp", fonteTexto, cor::VERDE, Alinha::Centro);
   } else {
     const std::string n = formatarNumero(_para);
     if (Quadro::largura(n, fonteDiscador) <= L - 24) q.texto(L / 2, 134, n, fonteDiscador, cor::TEXTO, Alinha::Centro);
@@ -1697,9 +1749,9 @@ void Interface::_desenharPara(Quadro& q) const {
     if (i == 2 && linhas.size() > 3) l = Quadro::caber(l + " …", fontePequena, L - 48);
     q.texto(24, 188 + (int)i * 18, l, fontePequena, cor::SUAVE);
   }
-  q.texto(L - 24, 254, contagemDePartes(pdu::contar(_mt.texto()).partes), fontePequena, cor::DISCRETO,
-          Alinha::Direita);
-  q.texto(MARGEM, 287, "# apaga", fontePequena, cor::DISCRETO);
+  q.texto(L - 24, 254, contagemDePartes(pdu::contar(whatsapp::textoParaPonte(_para, _mt.texto())).partes),
+          fontePequena, cor::DISCRETO, Alinha::Direita);
+  q.texto(MARGEM, 287, whatsapp::ehEndereco(_para) ? "# outro número" : "# apaga", fontePequena, cor::DISCRETO);
   _dicas(q, "Enviar", "Voltar");
 }
 
@@ -1765,7 +1817,9 @@ void Interface::_desenharLista(Quadro& q) const {
     const bool ok = _caixa->ler(itens[i].id, m);
     const std::string quando = ok ? _quando(m.dataHora) : "";
     const int wq = Quadro::largura(quando, fontePequena);
+    const bool wa = ok && whatsapp::ehEndereco(m.numero);
     const std::string num = !ok ? "(não consegui ler)"
+                            : wa ? (m.numero == whatsapp::PONTE ? "Ponte do WhatsApp" : whatsapp::nome(m.numero))
                             : !m.numero.empty() ? formatarNumero(m.numero)
                             : e == Caixa::Rascunho ? "(sem destinatário)" : "Número privado";
     const Fonte& fn = e == Caixa::Nova ? fonteTitulo : fonteTexto;   // as novas em negrito
@@ -1774,7 +1828,13 @@ void Interface::_desenharLista(Quadro& q) const {
     std::string previa = ok ? comecoDoTexto(m.texto) : "";
     if (e == Caixa::NaoEnviada) previa = "Não enviada · " + previa;
     else if (e == Caixa::Rascunho) previa = "Rascunho · " + previa;
-    q.texto(30, y + 37, Quadro::caber(previa, fontePequena, L - 30 - 16), fontePequena,
+    int xp = 30;
+    if (wa) {                                         // "WhatsApp · ..." com a palavra em verde
+      q.texto(xp, y + 37, "WhatsApp", fontePequena, cor::VERDE);
+      xp += Quadro::largura("WhatsApp", fontePequena);
+      previa = " · " + previa;
+    }
+    q.texto(xp, y + 37, Quadro::caber(previa, fontePequena, L - xp - 16), fontePequena,
             e == Caixa::Nova ? cor::TEXTO : (e == Caixa::NaoEnviada || e == Caixa::Rascunho) ? cor::AMBAR : cor::SUAVE);
   }
   if (n > linhas) {                                   // onde estamos na lista
@@ -1792,12 +1852,18 @@ void Interface::_desenharLer(Quadro& q) {
   _barra(q, true);
   const bool recebida = _msg.estado == Caixa::Nova || _msg.estado == Caixa::Lida;
   const bool falhou = _msg.estado == Caixa::NaoEnviada, rascunho = _msg.estado == Caixa::Rascunho;
-  q.texto(MARGEM, 46,
-          recebida ? "De" : falhou ? "Para · não enviada" : rascunho ? "Rascunho, para" : "Para · enviada",
-          fontePequena, (falhou || rascunho) ? cor::AMBAR : cor::SUAVE);
+  const bool wa = whatsapp::ehEndereco(_msg.numero);
+  const char* rotulo = wa ? (recebida ? "WhatsApp" : falhou ? "WhatsApp · não enviada" : rascunho ? "Rascunho, para"
+                                                                                             : "WhatsApp · enviada")
+                          : (recebida ? "De" : falhou ? "Para · não enviada" : rascunho ? "Rascunho, para"
+                                                                                       : "Para · enviada");
+  q.texto(MARGEM, 46, rotulo, fontePequena, (falhou || rascunho) ? cor::AMBAR : wa ? cor::VERDE : cor::SUAVE);
   q.texto(L - MARGEM, 46, _quando(_msg.dataHora), fontePequena, cor::SUAVE, Alinha::Direita);
-  const std::string num = !_msg.numero.empty() ? formatarNumero(_msg.numero)
-                          : rascunho ? "(sem destinatário)" : "Número privado";
+  const std::string num = _msg.numero == whatsapp::PONTE ? "Ponte do WhatsApp"
+                          : wa                           ? whatsapp::nome(_msg.numero)
+                          : !_msg.numero.empty()         ? formatarNumero(_msg.numero)
+                          : rascunho                     ? "(sem destinatário)"
+                                                         : "Número privado";
   q.texto(MARGEM, 70, Quadro::caber(num, fonteTitulo, L - 2 * MARGEM), fonteTitulo, cor::TEXTO);
   q.linhaH(MARGEM, 80, L - 2 * MARGEM, cor::DIVISOR);
   const auto linhas = Quadro::quebrar(_msg.texto, fonteTexto, L - 2 * MARGEM - 8);
@@ -1815,8 +1881,9 @@ void Interface::_desenharLer(Quadro& q) {
 }
 
 static const char* nomeDaOpcao(int o) {
-  static const char* const nomes[] = {"Responder",       "Ligar",  "Encaminhar",         "Tentar de novo",
-                                      "Editar e enviar", "Apagar", "Continuar escrevendo"};
+  static const char* const nomes[] = {"Responder",       "Ligar",  "Encaminhar",           "Tentar de novo",
+                                      "Editar e enviar", "Apagar", "Continuar escrevendo", "Silenciar a conversa",
+                                      "Reativar a conversa", "Pausar o WhatsApp", "Retomar o WhatsApp"};
   return nomes[o];
 }
 
