@@ -61,4 +61,10 @@ std::string reativar(const std::string& numero);    // "WA#7xk Maria" → "WA+7x
 // for mais curto). Sem o DDD não vale: outro DDD é outro telefone.
 bool mesmoNumero(const std::string& a, const std::string& b);
 
+// O número da ponte como digitado no comando "ponte", arrumado para guardar:
+// "11 97777-6666" e "(011) 97777-6666" → "+5511977776666"; "+55 11 9..." fica;
+// "+11 97777-6666" (o + sobrando) também vira "+5511977776666". Devolve ""
+// e o motivo em `erro` se não servir (curto, letras, celular sem o 9).
+std::string numeroDaPonte(const std::string& digitado, std::string& erro);
+
 }  // namespace whatsapp

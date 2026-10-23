@@ -54,6 +54,20 @@ int main() {
   CONFERE(!mesmoNumero("977776666", "977776666"));          // sem DDD não vale
   CONFERE(!mesmoNumero("190", "190") && !mesmoNumero("", "11977776666") && !mesmoNumero("TIM", "TIM"));
 
+  printf("5. o número da ponte digitado\n");
+  std::string erro;
+  CONFERE(numeroDaPonte("11 97777-6666", erro) == "+5511977776666" && erro.empty());
+  CONFERE(numeroDaPonte("(011) 97777-6666", erro) == "+5511977776666");
+  CONFERE(numeroDaPonte("+55 11 97777-6666", erro) == "+5511977776666");
+  CONFERE(numeroDaPonte("5511977776666", erro) == "+5511977776666");
+  CONFERE(numeroDaPonte("+11 97777-6666", erro) == "+5511977776666");      // o + sobrando
+  CONFERE(numeroDaPonte("11 3333-4444", erro) == "+551133334444");          // fixo, 10 dígitos
+  CONFERE(numeroDaPonte("1977776666", erro).empty() && erro.find("falta o 9") != std::string::npos);
+  CONFERE(numeroDaPonte("977776666", erro).empty() && !erro.empty());       // sem DDD
+  CONFERE(numeroDaPonte("+1 415 555 0100", erro) == "+14155550100");        // de fora
+  CONFERE(numeroDaPonte("11 9777A-6666", erro).empty() && !erro.empty());
+  CONFERE(numeroDaPonte("", erro).empty());
+
   printf("\n%d verificações, %d falha(s)\n", verificacoes, falhas);
   return falhas ? 1 : 0;
 }

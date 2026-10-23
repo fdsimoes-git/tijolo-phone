@@ -46,6 +46,7 @@ public class Principal extends Activity {
         "para o WhatsApp. Deixe este Android ligado, no carregador e no Wi-Fi.", 15);
 
     secao("1. O número do Tijolo");
+    texto("O número do chip que está no Tijolo (não o deste Android).", 14);
     numero = new EditText(this);
     numero.setInputType(InputType.TYPE_CLASS_PHONE);
     numero.setHint("ex.: 11 98888-7777");
@@ -54,12 +55,13 @@ public class Principal extends Activity {
     botao("Guardar o número", new View.OnClickListener() {
       @Override
       public void onClick(View v) {
-        final String d = Ponte.arrumarNumero(numero.getText().toString());
+        final String digitado = numero.getText().toString();
+        final String d = Ponte.arrumarNumero(digitado);
         if (d == null) {
-          Toast.makeText(Principal.this, "Escreva o número com DDD.", Toast.LENGTH_LONG).show();
+          Toast.makeText(Principal.this, Ponte.motivoNumero(digitado), Toast.LENGTH_LONG).show();
           return;
         }
-        Ponte.opcoes(Principal.this).edit().putString("tijolo", d).apply();
+        Ponte.opcoes(Principal.this).edit().putString("tijolo", d).putBoolean("avisou_sem_numero", false).apply();
         numero.setText(d);
         Ponte.registrar(Principal.this, "Número do Tijolo: " + d);
         atualizar();
@@ -108,7 +110,7 @@ public class Principal extends Activity {
           Toast.makeText(Principal.this, "Falta o número do Tijolo.", Toast.LENGTH_LONG).show();
           return;
         }
-        Ponte.enviar(Principal.this, Protocolo.aviso("Teste da ponte: se chegou, o caminho Android -> Tijolo funciona."));
+        Ponte.avisar(Principal.this, Protocolo.aviso("Teste da ponte: se chegou, o caminho Android -> Tijolo funciona."));
         Toast.makeText(Principal.this, "Mandando...", Toast.LENGTH_SHORT).show();
         atualizar();
       }
@@ -117,6 +119,7 @@ public class Principal extends Activity {
     botao("Tentar mandar a fila agora", new View.OnClickListener() {
       @Override
       public void onClick(View v) {
+        Ponte.saida(Principal.this).tentarAgora();
         Ponte.esvaziarSaida(Principal.this);
         atualizar();
       }
@@ -174,9 +177,13 @@ public class Principal extends Activity {
       linha(b, false, "O Android pode tirar as permissões se o app ficar sem uso: em \"Informações do app\", " +
           "desligue \"Remover permissões se o app não for usado\" / \"Pausar atividade no app\"");
     estado.setText(b.toString().trim());
-    final int n = Ponte.saida(this).pendentes();
+    final Saida saida = Ponte.saida(this);
+    final int n = saida.pendentes();
+    final long ate = saida.esperaAte();
     fila.setText(n == 0 ? "Fila de SMS para o Tijolo: vazia."
-        : "Fila de SMS para o Tijolo: " + n + " esperando (sem sinal, sem crédito ou no limite por minuto).");
+        : "Fila de SMS para o Tijolo: " + n + " esperando" + (t.isEmpty() ? " (falta o número do Tijolo)."
+            : ate > Ponte.agora() ? " (a última falhou: sem sinal ou sem crédito? Tenta de novo às " + Ponte.hora(ate) + ")."
+            : " (no limite de SMS por minuto)."));
     restrito.setVisibility(Build.VERSION.SDK_INT >= 33 && !(sms && acesso) ? View.VISIBLE : View.GONE);
     ligada.setChecked(Ponte.ligada(this));
     grupos.setChecked(Ponte.grupos(this));
@@ -184,7 +191,8 @@ public class Principal extends Activity {
     final StringBuilder l = new StringBuilder();
     for (Conversas.Entrada e : Ponte.conversas(this).recentes(30)) {
       l.append('#').append(e.numero).append(Protocolo.codigo(e.chave)).append("  ").append(e.titulo);
-      if (Ponte.silenciada(this, e.chave)) l.append("  (silenciada: WA+").append(e.numero).append(" reativa)");
+      if (Ponte.silenciada(this, e.chave))
+        l.append("  (silenciada: WA+").append(e.numero).append(Protocolo.codigo(e.chave)).append(" reativa)");
       l.append('\n');
     }
     lista.setText(l.length() == 0 ? "Nenhuma ainda: aparecem quando chega mensagem no WhatsApp." : l.toString().trim());

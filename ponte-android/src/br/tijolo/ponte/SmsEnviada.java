@@ -10,25 +10,23 @@ public class SmsEnviada extends BroadcastReceiver {
   @Override
   public void onReceive(Context c, Intent i) {
     final long id = i.getLongExtra("id", 0);
+    final int tentativa = i.getIntExtra("tentativa", 0);
     final int partes = i.getIntExtra("partes", 1);
     final String resumo = i.getStringExtra("resumo");
     final boolean ok = getResultCode() == Activity.RESULT_OK;
     final long agora = Ponte.agora();
     final Saida s = Ponte.saida(c);
-    final long esperaAntes = s.esperaAtual(id);
-    switch (s.resultado(id, ok, agora)) {
+    final long esperaAntes = s.esperaAte();
+    switch (s.resultado(id, tentativa, ok, agora)) {
       case SAIU:
         Ponte.registrar(c, "→ Tijolo: " + resumo + (partes > 1 ? " (" + partes + " partes)" : ""));
         break;
       case VAI_TENTAR_DE_NOVO: {
-        final long quando = s.esperaAtual(id);
+        final long quando = s.esperaAte();
         Ponte.registrar(c, "FALHOU a SMS (" + motivo(getResultCode()) + "): " + resumo +
-            (quando > esperaAntes ? "; tento de novo às " + Ponte.hora(quando) : ""));
+            (quando > esperaAntes ? "; a fila tenta de novo às " + Ponte.hora(quando) : ""));
         break;
       }
-      case DESISTIU:
-        Ponte.registrar(c, "Desisti da SMS depois de 2 dias tentando: " + resumo);
-        break;
       default:
         break;
     }

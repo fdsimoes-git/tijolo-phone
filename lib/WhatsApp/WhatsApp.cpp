@@ -125,4 +125,41 @@ bool mesmoNumero(const std::string& a, const std::string& b) {
   return x.compare(x.size() - n, n, y, y.size() - n, n) == 0;
 }
 
+std::string numeroDaPonte(const std::string& digitado, std::string& erro) {
+  erro.clear();
+  std::string d;
+  bool mais = false, outros = false;
+  for (char c : digitado) {
+    if (c == ' ' || c == '-' || c == '(' || c == ')' || c == '.') continue;
+    if (c == '+' && d.empty() && !mais) { mais = true; continue; }
+    if (digito(c)) d += c;
+    else outros = true;
+  }
+  if (outros || d.empty()) {
+    erro = "escreva só o número, com DDD";
+    return "";
+  }
+  // "+11 9...": o + sobrou (um número de fora com +1 não tem 9 no 3º dígito)
+  if (mais && d.compare(0, 2, "55") != 0 && d.size() == 11 && d[2] == '9') mais = false;
+  if (!mais && d[0] == '0' && (d.size() == 11 || d.size() == 12)) d.erase(0, 1);   // 0 + DDD
+  if (!mais && d.compare(0, 2, "55") == 0 && (d.size() == 12 || d.size() == 13)) mais = true;
+  std::string nacional = mais && d.compare(0, 2, "55") == 0 ? d.substr(2) : mais ? "" : d;
+  if (!mais || d.compare(0, 2, "55") == 0) {
+    if (nacional.size() == 10 && nacional[2] >= '6') {
+      erro = "celular tem 11 dígitos com o DDD: falta o 9 depois do DDD?";
+      return "";
+    }
+    if (nacional.size() != 10 && nacional.size() != 11) {
+      erro = "escreva o número com DDD (11 dígitos, como 11 97777-6666)";
+      return "";
+    }
+    return "+55" + nacional;
+  }
+  if (d.size() < 10) {
+    erro = "número curto demais";
+    return "";
+  }
+  return "+" + d;
+}
+
 }  // namespace whatsapp

@@ -629,8 +629,14 @@ void status() {
                   (unsigned)(PastaLittleFS::total() / 1024));
   else
     Serial.println(" · NA RAM (a flash não montou: some ao desligar)");
-  if (ponteWhatsApp.length()) Serial.println("WhatsApp:  ponte no " + ponteWhatsApp);
-  else Serial.println("WhatsApp:  sem ponte (comando ponte <número>)");
+  if (ponteWhatsApp.length()) {
+    std::string erro;
+    whatsapp::numeroDaPonte(ponteWhatsApp.c_str(), erro);
+    Serial.println("WhatsApp:  ponte no " + ponteWhatsApp +
+                   (erro.empty() ? String("") : " (NÃO SERVE: " + String(erro.c_str()) + "; use ponte <número com DDD>)"));
+  } else {
+    Serial.println("WhatsApp:  sem ponte (comando ponte <número>)");
+  }
   int usados, total;
   if (modem.ocupacaoSms(usados, total))
     Serial.printf("Chip:      %d de %d posições de SMS ocupadas\n", usados, total);
@@ -1318,15 +1324,12 @@ void executar(String linha) {
       else falhou("enviar SMS à ponte");
       return;
     }
-    String n = normalizarNumero(resto);
-    int digitos = 0;
-    for (unsigned i = 0; i < n.length(); i++) digitos += isdigit((unsigned char)n[i]) ? 1 : 0;
-    if (digitos < 10 || digitos != (int)n.length() - (n.startsWith("+") ? 1 : 0)) {
-      Serial.println("Escreva só o número, com DDD: ponte 11977776666");
+    std::string erro;
+    const String n = whatsapp::numeroDaPonte(resto.c_str(), erro).c_str();
+    if (n.isEmpty()) {
+      Serial.println("Esse número não serve (" + String(erro.c_str()) + "). Exemplo: ponte 11977776666");
       return;
     }
-    // "5511977776666" (o 55 sem o +) é o número com o código do país
-    if (!n.startsWith("+") && n.startsWith("55") && (digitos == 12 || digitos == 13)) n = "+" + n;
     ponteWhatsApp = n;
     memoria.putString("ponte", n);
     Serial.println("Ponte do WhatsApp: " + n + ". As SMS dela no formato WA#... viram mensagens do WhatsApp.");
@@ -1777,6 +1780,13 @@ void setup() {
   analogReadResolution(12);
   memoria.begin("tijolo", false);
   ponteWhatsApp = memoria.isKey("ponte") ? memoria.getString("ponte", "") : String(PONTE_WHATSAPP);
+  if (ponteWhatsApp.length()) {             // um número guardado por um firmware antigo pode não servir mais
+    std::string erro;
+    whatsapp::numeroDaPonte(ponteWhatsApp.c_str(), erro);
+    if (!erro.empty())
+      Serial.println("Atenção: o número da ponte do WhatsApp (" + ponteWhatsApp + ") não serve: " + String(erro.c_str()) +
+                     ". Use: ponte <número com DDD>");
+  }
   // Medição do 3V3 para o diagnóstico (só com o resistor no IO2): começa
   // antes do modem, para pegar o que acontece quando ele liga.
   medidor.begin(PINO_MEDIR_3V3, PINO_BATERIA);

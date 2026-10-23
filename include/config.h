@@ -102,10 +102,24 @@ constexpr uint32_t TELA_VIGIA_MS = 2000;
 // para o 3V3, então o IO2 fica com metade do 3V3. Sem o resistor, nada muda.
 constexpr int PINO_MEDIR_3V3 = 2;
 
+// Montagem:
+//   0 = na protoboard, com fios (Fase 2): o teclado de membrana nos 7 pinos
+//       IO40..IO21 e os botões opcionais (BOTAO_VERDE / BOTAO_VERMELHO abaixo);
+//   1 = na placa da frente (montagem/README.md): 12 teclas na placa, a coluna
+//       1 4 7 * no IO17, botão verde no IO35 e vermelho no IO21.
+// Trocou? Ensine o teclado de novo: segure o 1 enquanto aparece "Ligando o modem…"
+// (ou "teclado aprender" no Monitor Serial).
+#define MONTAGEM_PLACA 0
+
 // Teclado 3×4: os 7 fios, EM QUALQUER ORDEM (o Tijolo aprende qual é qual).
-// Estão em sequência na barra J2, pinos 8 a 14.
+#if MONTAGEM_PLACA
+constexpr int TECLADO_FIOS[7] = {40, 39, 38, 15, 16, 37, 17};
+constexpr const char* NOMES_FIOS[7] = {"IO40", "IO39", "IO38", "IO15", "IO16", "IO37", "IO17"};
+#else
+// Na protoboard: em sequência na barra J2, pinos 8 a 14.
 constexpr int TECLADO_FIOS[7] = {40, 39, 38, 15, 16, 37, 21};
 constexpr const char* NOMES_FIOS[7] = {"IO40", "IO39", "IO38", "IO15", "IO16", "IO37", "IO21"};
+#endif
 
 // Verde (ligar, atender) e vermelho (encerrar, voltar, apagar; segurado
 // desliga o Tijolo). Sem botões: segurar a tecla 1 vale o verde e segurar
@@ -116,8 +130,13 @@ constexpr char TECLA_COMO_VERMELHO = '3';
 // Botões de verdade (opcionais): um lado no pino, o outro no GND (pull-up
 // interno da ESP32). -1 = sem botão. Com eles: verde 35 (J1-8) e vermelho
 // 17 (J1-10). Os dois jeitos funcionam juntos.
+#if MONTAGEM_PLACA
+constexpr int BOTAO_VERDE    = 35;
+constexpr int BOTAO_VERMELHO = 21;
+#else
 constexpr int BOTAO_VERDE    = -1;
 constexpr int BOTAO_VERMELHO = -1;
+#endif
 // Ligar: segure o 3 (ou o vermelho) por este tempo. Quem acorda a ESP32 do
 // sono profundo é um pino RTC (GPIO 0 a 21): o vermelho, ou um dos dois
 // fios da tecla 3 (IO15, IO16 ou IO21). Se nenhum fio da tecla 3 cair num

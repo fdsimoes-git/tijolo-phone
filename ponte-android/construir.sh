@@ -19,12 +19,12 @@ AJ=${ANDROID_JAR:-$SDK/platforms/android-23/android.jar}
 BT=${BUILD_TOOLS:-$SDK/build-tools/debian}
 CHAVE=${PONTE_CHAVE:-chave/ponte.jks}
 # A senha da chave: PONTE_SENHA, ou chave/senha.txt. Uma chave nova ganha
-# uma senha sorteada (guardada em chave/senha.txt); as chaves criadas antes
-# disso usam a senha antiga, "ponte-do-tijolo".
+# uma senha sorteada (guardada em chave/senha.txt).
 ARQ_SENHA="$(dirname "$CHAVE")/senha.txt"
 if [ -n "${PONTE_SENHA:-}" ]; then SENHA=$PONTE_SENHA
 elif [ -f "$ARQ_SENHA" ]; then SENHA=$(cat "$ARQ_SENHA")
-elif [ -f "$CHAVE" ]; then SENHA=ponte-do-tijolo
+elif [ -f "$CHAVE" ]; then
+  echo "Falta a senha da chave $CHAVE: ponha em $ARQ_SENHA (ou em PONTE_SENHA)." >&2; exit 1
 else
   mkdir -p "$(dirname "$CHAVE")"
   SENHA=$(od -An -N18 -tx1 /dev/urandom | tr -d ' \n')

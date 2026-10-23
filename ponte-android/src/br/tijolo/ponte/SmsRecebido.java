@@ -31,6 +31,12 @@ public class SmsRecebido extends BroadcastReceiver {
     final StringBuilder b = new StringBuilder();
     for (SmsMessage m : ms)
       if (m != null && m.getMessageBody() != null) b.append(m.getMessageBody());
+    // Uma SMS igual a uma que a ponte acabou de mandar: o "número do Tijolo"
+    // é o deste Android, e ela estaria respondendo a si mesma no WhatsApp
+    if (Ponte.saida(c).mandouHaPouco(b.toString())) {
+      Ponte.registrar(c, "Ignorei uma SMS igual a uma que a ponte mandou: o número do Tijolo não pode ser o deste Android.");
+      return;
+    }
     final Protocolo.Pedido p = Protocolo.ler(b.toString());
     if (p.tipo == Protocolo.Pedido.Tipo.DESCONHECIDO) return;
 
@@ -65,7 +71,7 @@ public class SmsRecebido extends BroadcastReceiver {
         final String erro = Ouvinte.responder(c, p.conversa, p.codigo, p.texto);
         if (erro != null) {
           Ponte.registrar(c, "Não respondi: " + erro);
-          Ponte.enviar(c, Protocolo.aviso(primeiraMaiuscula(erro)));
+          Ponte.avisar(c, Protocolo.aviso(primeiraMaiuscula(erro)));
         }
         break;
       }
@@ -75,37 +81,49 @@ public class SmsRecebido extends BroadcastReceiver {
           final String t = e.titulo + (Ponte.silenciada(c, e.chave) ? " (silenciada)" : "");
           v.add(new String[] {String.valueOf(e.numero), Protocolo.codigo(e.chave), t});
         }
-        Ponte.enviar(c, Protocolo.lista(v));
+        Ponte.avisar(c, Protocolo.lista(v));
         Ponte.registrar(c, "O Tijolo pediu a lista das conversas.");
         break;
       }
-      case PAUSAR:
+      case PAUSAR: {
         Ponte.opcoes(c).edit().putBoolean("ligada", false).apply();
-        Ponte.registrar(c, "Pausada pelo Tijolo (WA-).");
-        Ponte.enviar(c, Protocolo.aviso("Ponte pausada: o WhatsApp não vem para o Tijolo até você mandar WA+"));
+        // o que estava na fila também não vai (as marcas já estão gravadas: nada volta depois)
+        final int tiradas = Ponte.saida(c).descartar("WA#");
+        Ponte.registrar(c, "Pausada pelo Tijolo (WA-)" + (tiradas > 0 ? "; tirei " + tiradas + " SMS da fila." : "."));
+        Ponte.avisar(c, Protocolo.aviso("Ponte pausada: o WhatsApp não vem para o Tijolo até você mandar WA+" +
+            (tiradas > 0 ? " (" + tiradas + (tiradas == 1 ? " mensagem que estava na fila não vai)." :
+                " mensagens que estavam na fila não vão).") : "")));
         break;
+      }
       case RETOMAR:
         Ponte.opcoes(c).edit().putBoolean("ligada", true).apply();
         Ponte.registrar(c, "Ligada de novo pelo Tijolo (WA+).");
-        Ponte.enviar(c, Protocolo.aviso("Ponte ligada de novo."));
+        Ponte.avisar(c, Protocolo.aviso("Ponte ligada de novo."));
         break;
       case SILENCIAR:
       case REATIVAR: {
         final String chave = conversas.chave(p.conversa);
         if (chave == null) {
-          Ponte.enviar(c, Protocolo.aviso("Não conheço a conversa " + p.conversa + ". Mande WA? para ver a lista."));
+          Ponte.avisar(c, Protocolo.aviso("Não conheço a conversa " + p.conversa + ". Mande WA? para ver a lista."));
           break;
         }
         final String t = conversas.titulo(p.conversa);
-        if (p.codigo != null && !p.codigo.equals(Protocolo.codigo(chave))) {
-          Ponte.enviar(c, Protocolo.aviso("A conversa " + p.conversa + " agora é outra (" + t + "): não mexi nela."));
+        if (p.codigo == null) {
+          Ponte.avisar(c, Protocolo.aviso(SEM_CODIGO));
+          break;
+        }
+        if (!p.codigo.equals(Protocolo.codigo(chave))) {
+          Ponte.avisar(c, Protocolo.aviso("A conversa " + p.conversa + " agora é outra (" + t + "): não mexi nela."));
           break;
         }
         final boolean silenciar = p.tipo == Protocolo.Pedido.Tipo.SILENCIAR;
         Ponte.silenciar(c, chave, silenciar);
+        // silenciada: o que dela estava na fila também não vai
+        final int tiradas = silenciar ? Ponte.saida(c).descartar("WA#" + p.conversa + p.codigo + " ") : 0;
         Ponte.registrar(c, (silenciar ? "Silenciada pelo Tijolo: " : "Reativada pelo Tijolo: ") + t);
-        Ponte.enviar(c, Protocolo.aviso(silenciar
-            ? t + " silenciada: as mensagens dela não vêm mais (Reativar a conversa, no Tijolo, volta)."
+        Ponte.avisar(c, Protocolo.aviso(silenciar
+            ? t + " silenciada: as mensagens dela não vêm mais (Reativar a conversa, no Tijolo, volta)." +
+              (tiradas > 0 ? " " + tiradas + (tiradas == 1 ? " que estava na fila não vai." : " que estavam na fila não vão.") : "")
             : t + " volta a vir para o Tijolo."));
         break;
       }
@@ -113,6 +131,10 @@ public class SmsRecebido extends BroadcastReceiver {
         break;
     }
   }
+
+  /** A mensagem é de antes da ponte pôr o código das conversas ("WA#7 Maria", sem as 2 letras) */
+  static final String SEM_CODIGO = "Essa mensagem é de antes da atualização da ponte (sem o código da conversa). " +
+      "Use uma mensagem mais nova dessa conversa.";
 
   private static String primeiraMaiuscula(String s) {
     return s.isEmpty() ? s : Character.toUpperCase(s.charAt(0)) + s.substring(1);

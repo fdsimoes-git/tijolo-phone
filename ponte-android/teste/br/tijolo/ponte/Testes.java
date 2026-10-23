@@ -214,51 +214,110 @@ public class Testes {
     confere(it != null && it.id == id, "pronta para sair");
     s.enviando(it, 2, t);
     confere(s.proxima(t) == null, "saindo: não sai de novo");
-    igual(Saida.Resultado.ESPERANDO, s.resultado(id, true, t + 1000), "uma parte foi");
-    igual(Saida.Resultado.SAIU, s.resultado(id, true, t + 2000), "as duas: saiu");
+    igual(Saida.Resultado.ESPERANDO, s.resultado(id, 1, true, t + 1000), "uma parte foi");
+    igual(Saida.Resultado.SAIU, s.resultado(id, 1, true, t + 2000), "as duas: saiu");
     confere(s.pendentes() == 0, "e saiu da fila");
-    igual(Saida.Resultado.DESCONHECIDA, s.resultado(id, true, t + 3000), "resultado repetido: nada");
-    // falha: tenta de novo em 1, 2, 5 min...
-    final long id2 = s.adicionar("WA! teste", t);
-    s.enviando(s.proxima(t), 1, t);
-    igual(Saida.Resultado.VAI_TENTAR_DE_NOVO, s.resultado(id2, false, t + 1000), "falhou");
-    confere(s.proxima(t + 30_000) == null, "espera 1 minuto");
+    igual(Saida.Resultado.DESCONHECIDA, s.resultado(id, 1, true, t + 3000), "resultado repetido: nada");
+    confere(s.mandouHaPouco("WA#7xk Maria\nlinha 1\nlinha\t2 \\ fim") && !s.mandouHaPouco("outra"),
+        "lembra o que mandou (para não obedecer à própria SMS)");
+
+    // falha: a fila inteira espera 1, 2, 5 min..., e recomeça pela mais antiga
+    final long id2 = s.adicionar("WA#1ab A\nvelha", t);
+    final long id2b = s.adicionar("WA#2cd B\nnova", t + 10);
+    it = s.proxima(t);
+    confere(it.id == id2, "a mais antiga primeiro");
+    s.enviando(it, 1, t);
+    igual(Saida.Resultado.VAI_TENTAR_DE_NOVO, s.resultado(id2, 1, false, t + 1000), "falhou");
+    confere(s.proxima(t + 30_000) == null, "a fila inteira espera 1 minuto (nem a nova sai)");
+    igual(t + 1000 + 60_000, s.esperaAte(), "até quando espera");
     it = s.proxima(t + 61_001);
-    confere(it != null && it.id == id2, "e tenta de novo");
+    confere(it != null && it.id == id2, "e tenta de novo pela mais antiga");
     s.enviando(it, 1, t + 61_001);
-    s.resultado(id2, false, t + 62_000);
+    s.resultado(id2, 2, false, t + 62_000);
     confere(s.proxima(t + 62_000 + 61_000) == null && s.proxima(t + 62_000 + 121_000) != null, "depois, 2 minutos");
-    // sem resposta do Android em 3 min: conta como falha
+    s.tentarAgora();
+    confere(s.esperaAte() == 0 && s.proxima(t + 62_001) != null, "tentar agora: esquece a espera");
+    // uma SMS que sai prova que o sinal voltou: a fila anda na hora
+    it = s.proxima(t + 70_000);
+    s.enviando(it, 1, t + 70_000);                       // a velha (A) sai junto com a nova (B)
+    final Saida.Item itB = s.proxima(t + 70_000);
+    confere(itB != null && itB.id == id2b, "duas saindo juntas");
+    s.enviando(itB, 1, t + 70_000);
+    s.resultado(id2, 3, false, t + 71_000);              // a velha falha: a fila esperaria...
+    confere(s.proxima(t + 72_000) == null, "falhou: espera");
+    igual(Saida.Resultado.SAIU, s.resultado(id2b, 1, true, t + 73_000), "a nova saiu");
+    it = s.proxima(t + 73_001);
+    confere(it != null && it.id == id2 && s.esperaAte() == 0, "...mas a nova saiu: a velha vai na hora");
+    // os avisos passam na frente; descartar tira da fila o que não está saindo
+    s = new Saida(new Memoria());
+    s.adicionar("WA#7xk Maria\noi", t);
+    s.adicionar("WA#8ab Pedro\noi", t);
+    s.adicionar("WA#7xk Maria\nde novo", t);
+    s.adicionarNaFrente("WA! Ponte pausada", t);
+    igual("WA! Ponte pausada", s.proxima(t).texto, "o aviso vai primeiro");
+    igual(2, s.descartar("WA#7xk "), "silenciar a Maria tira as 2 dela da fila");
+    igual(1, s.descartar("WA#"), "pausar tira as do WhatsApp");
+    igual(1, s.pendentes(), "o aviso fica");
+    // sem resposta do Android em 15 min: conta como falha, e o resultado atrasado não conta
     s = new Saida(new Memoria());
     final long id3 = s.adicionar("x", t);
     s.enviando(s.proxima(t), 1, t);
     confere(s.proxima(t + Saida.SEM_RESPOSTA_MS) == null, "esperando o resultado");
-    confere(s.proxima(t + Saida.SEM_RESPOSTA_MS + 1) == null, "sem resposta: falhou, espera 1 min");
-    confere(s.proxima(t + Saida.SEM_RESPOSTA_MS + 1 + 60_000) != null, "e tenta de novo");
-    igual(Saida.Resultado.DESCONHECIDA, s.resultado(id3, true, t + 1), "resultado atrasado de uma tentativa velha: ignorado");
-    // guardada: sobrevive a reiniciar, com o texto inteiro
+    confere(s.proxima(t + Saida.SEM_RESPOSTA_MS + 1) == null, "sem resposta: falhou, a fila espera 1 min");
+    it = s.proxima(t + Saida.SEM_RESPOSTA_MS + 1 + 60_000);
+    confere(it != null, "e tenta de novo");
+    s.enviando(it, 1, t + Saida.SEM_RESPOSTA_MS + 60_001);
+    igual(Saida.Resultado.DESCONHECIDA, s.resultado(id3, 1, true, t + Saida.SEM_RESPOSTA_MS + 70_000),
+        "o resultado atrasado da 1ª tentativa não conta");
+    igual(Saida.Resultado.SAIU, s.resultado(id3, 2, true, t + Saida.SEM_RESPOSTA_MS + 71_000), "o da 2ª conta");
+    // guardada: sobrevive a reiniciar, com o texto inteiro, as tentativas e a espera
     final Saida s2 = new Saida(gs);
     final Saida.Item i2 = s2.porId(id2);
-    confere(i2 != null && i2.tentativas == 2, "guardada, com as tentativas");
+    confere(i2 != null && i2.tentativas == 3 && s2.esperaAte() == 0, "guardada, com as tentativas");
     final long id4 = s2.adicionar("a\nb\tc\\d", t);
     igual("a\nb\tc\\d", new Saida(gs).porId(id4).texto, "texto com quebras, tabs e barras");
     confere(new Saida(gs).adicionar("y", t) > id4, "os números continuam");
-    // limite por minuto
-    s = new Saida(new Memoria());
+    confere(new Saida(gs).mandouHaPouco("WA#2cd B\nnova"), "e lembra o que mandou");
+    // limite por minuto (vale também depois de reiniciar)
+    final Memoria gm = new Memoria();
+    s = new Saida(gm);
     confere(s.cabe(6, t), "minuto vazio");
     for (int k = 0; k < 3; k++) s.enviando(new Saida.Item(100 + k, "x", t), 6, t);
     confere(!s.cabe(6, t + 10_000) && s.cabe(2, t + 10_000), "18 partes: cabem só mais 2");
     igual(t + 60_000, s.quandoCabe(t + 10_000), "libera um minuto depois");
     confere(s.cabe(6, t + 60_000), "um minuto depois, cabe");
-    // desiste depois de 2 dias
+    confere(!new Saida(gm).cabe(6, t + 10_000), "o app reiniciou no meio do minuto: o limite continua");
+    // desistir: depois de 2 dias, mas só com a fila falhando há um tempo
     s = new Saida(new Memoria());
     s.adicionar("velha", t);
-    confere(s.proxima(t + Saida.DESISTIR_MS + 1) == null && s.pendentes() == 0, "2 dias tentando: sai da fila");
+    confere(s.proxima(t + Saida.DESISTIR_MS + 1) != null && s.pendentes() == 1,
+        "o relógio pulou 2 dias, sem falhas: continua na fila");
+    long tt = t + Saida.DESISTIR_MS + 1;
+    for (int k = 0; k < Saida.FALHAS_PARA_DESISTIR; k++) {
+      it = s.proxima(tt);
+      if (it == null) break;
+      s.enviando(it, 1, tt);
+      s.resultado(it.id, it.tentativas, false, tt);
+      tt += 61 * 60_000;
+    }
+    confere(s.proxima(tt) == null && s.pendentes() == 0, "2 dias e muitas falhas: sai da fila");
+    igual(1, s.tirarDescartadas(), "e conta quantas saíram");
+    igual(0, s.tirarDescartadas(), "(uma vez só)");
+    // o relógio voltou: a espera não fica no futuro
+    s = new Saida(new Memoria());
+    s.adicionar("z", t);
+    it = s.proxima(t);
+    s.enviando(it, 1, t);
+    s.resultado(it.id, 1, false, t);
+    confere(s.proxima(t - 5 * 3600_000L) != null, "relógio 5 h para trás: a fila não fica parada");
     // a próxima hora a fazer algo
     s = new Saida(new Memoria());
     confere(s.proximaHora(t) == 0, "fila vazia: nada a fazer");
     s.adicionar("z", t + 5000);
-    igual(t + 5000, s.proximaHora(t), "a próxima");
+    igual(t, s.proximaHora(t), "uma esperando: agora");
+    it = s.proxima(t);
+    s.enviando(it, 1, t);
+    igual(t + Saida.SEM_RESPOSTA_MS + 1, s.proximaHora(t), "saindo: conferir se respondeu");
 
     System.out.println("\n" + verificacoes + " verificações, " + falhas + " falha(s)");
     System.exit(falhas == 0 ? 0 : 1);

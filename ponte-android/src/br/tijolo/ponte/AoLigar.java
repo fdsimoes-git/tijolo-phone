@@ -15,7 +15,7 @@ public class AoLigar extends BroadcastReceiver {
     Ponte.registrar(c, "O Android ligou.");
     Ponte.agendarVigia(c);
     if (!Ponte.numeroTijolo(c).isEmpty())
-      Ponte.enviar(c, Protocolo.aviso("A ponte ligou de novo (o Android reiniciou)."));
+      Ponte.avisar(c, Protocolo.aviso("A ponte ligou de novo (o Android reiniciou)."));
     else Ponte.esvaziarSaida(c);
   }
 }

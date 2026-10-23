@@ -7,6 +7,7 @@ import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.pm.PackageManager;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -127,7 +128,7 @@ public class Ouvinte extends NotificationListenerService {
       @Override
       public void run() {
         if (instancia == Ouvinte.this) instancia = null;
-        Ponte.registrar(Ouvinte.this, "Parou de ouvir as notificações; pedi ao Android para religar.");
+        Ponte.registrar(Ouvinte.this, "Parou de ouvir as notificações (o Android desligou o ouvinte).");
         religar(Ouvinte.this);
       }
     });
@@ -165,7 +166,7 @@ public class Ouvinte extends NotificationListenerService {
     // nada: o botão de responder guardado continua valendo
   }
 
-  /** Android 7+: pede ao sistema para ligar o ouvinte de novo */
+  /** Android 7+: pede ao sistema para ligar o ouvinte de novo (só funciona em alguns casos) */
   static void religar(Context c) {
     try {
       NotificationListenerService.class.getMethod("requestRebind", ComponentName.class)
@@ -173,6 +174,22 @@ public class Ouvinte extends NotificationListenerService {
     } catch (Exception ignorada) {
       // Android antigo: só desligando e ligando o acesso às notificações
     }
+  }
+
+  /**
+   * Tira e põe de novo o ouvinte no app: o Android vê o app "mudar" e volta a
+   * ligar o ouvinte. Só quando ele não está ouvindo (senão desligaria um que funciona).
+   */
+  static void religarForte(Context c) {
+    try {
+      final PackageManager pm = c.getPackageManager();
+      final ComponentName cn = new ComponentName(c, Ouvinte.class);
+      pm.setComponentEnabledSetting(cn, PackageManager.COMPONENT_ENABLED_STATE_DISABLED, PackageManager.DONT_KILL_APP);
+      pm.setComponentEnabledSetting(cn, PackageManager.COMPONENT_ENABLED_STATE_DEFAULT, PackageManager.DONT_KILL_APP);
+    } catch (Exception e) {
+      Ponte.registrar(c, "Não consegui religar o ouvinte: " + e);
+    }
+    religar(c);
   }
 
   // ---------- trava: o Android não dorme com mensagem esperando na fila ----------
@@ -198,44 +215,71 @@ public class Ouvinte extends NotificationListenerService {
   // Do WhatsApp para o Tijolo
   // ----------------------------------------------------------------------
 
-  /** @param aoLigar a notificação já estava aberta quando a ponte ligou */
-  private void processar(StatusBarNotification sbn, boolean aoLigar) {
-    if (!Ponte.ehWhatsApp(sbn.getPackageName())) return;
-    final Notification n = sbn.getNotification();
-    if (n == null || n.extras == null) return;
-    if ((n.flags & Notification.FLAG_GROUP_SUMMARY) != 0) return;   // o resumo "3 conversas"
-    if ((n.flags & Notification.FLAG_ONGOING_EVENT) != 0) return;   // chamada em andamento, "procurando mensagens"
-    final Bundle x = n.extras;
-    diagnosticar(sbn, n, x);
-    final Notification.Action responder = acaoDeResponder(n);
-    final boolean chamada = responder == null && ehChamadaPerdida(n, x);
-    if (responder == null && !chamada) return;      // "WhatsApp Web está ativo" e outras do sistema
+  /** O que a ponte tira de uma notificação de conversa do WhatsApp */
+  private static final class Lida {
+    String chave;            // o que identifica a conversa
+    String titulo;           // o nome (limpo), ou "" se esta notificação não traz um nome confiável
+    boolean grupo;
+    boolean chamada;         // chamada perdida
+    Notification.Action responder;
+    List<Novidades.Msg> todas;
+    String eu;
+  }
 
-    final String eu = eu(x);
+  /** Lê uma notificação; null se não é de uma conversa do WhatsApp */
+  private Lida ler(StatusBarNotification sbn) {
+    if (!Ponte.ehWhatsApp(sbn.getPackageName())) return null;
+    final Notification n = sbn.getNotification();
+    if (n == null || n.extras == null) return null;
+    if ((n.flags & Notification.FLAG_GROUP_SUMMARY) != 0) return null;   // o resumo "3 conversas"
+    if ((n.flags & Notification.FLAG_ONGOING_EVENT) != 0) return null;   // chamada em andamento, "procurando mensagens"
+    final Bundle x = n.extras;
+    final Lida l = new Lida();
+    l.responder = acaoDeResponder(n);
+    l.chamada = l.responder == null && ehChamadaPerdida(n, x);
+    if (l.responder == null && !l.chamada) return null;      // "WhatsApp Web está ativo" e outras do sistema
+
+    l.eu = eu(x);
     String chave = chaveDa(sbn, n);
-    final boolean grupo = ehGrupo(x) || (chave != null && chave.endsWith("@g.us"));
+    boolean grupo = ehGrupo(x) || (chave != null && chave.endsWith("@g.us"));
     String tituloCru = tituloDa(x, grupo);
-    final List<Novidades.Msg> todas = mensagensDa(n, x, tituloCru, chamada);
+    l.todas = mensagensDa(n, x, tituloCru, l.chamada);
     // Numa conversa a dois, o título é o nome de quem escreveu por último:
     // depois da sua resposta vira o seu ("Você"). E o Android 15 troca por
     // "WhatsApp" quando esconde uma mensagem com código. Nos dois casos, o
     // nome certo é o da última mensagem que não é sua.
-    if (!grupo && (mesmoNome(tituloCru, eu) || Ponte.ehNomeDoApp(tituloCru))) {
-      final String outro = Novidades.outroMaisRecente(todas, eu);
+    if (!grupo && (mesmoNome(tituloCru, l.eu) || Ponte.ehNomeDoApp(tituloCru))) {
+      final String outro = Novidades.outroMaisRecente(l.todas, l.eu);
       tituloCru = outro != null && !Ponte.ehNomeDoApp(outro) ? outro : "";
     }
     if (Ponte.ehNomeDoApp(tituloCru)) tituloCru = "";
     // Foto de grupo sem os sinais de grupo ("João @ Família"): o título não é o do grupo
     if (grupo && chave != null && x.getCharSequence("android.conversationTitle") == null) tituloCru = "";
     if (chave == null) {
-      if (tituloCru.isEmpty()) return;               // não dá para saber de que conversa é
+      if (tituloCru.isEmpty()) return null;          // não dá para saber de que conversa é
       chave = "titulo:" + tituloCru;
-      if (chamada) {                                 // a chamada perdida vai para a conversa da pessoa
+      if (l.chamada) {                               // a chamada perdida vai para a conversa da pessoa
         final String daConversa = conversas.chavePorTitulo(Texto.limpar(tituloCru, Ponte.MAXIMO_TITULO));
         if (daConversa != null) chave = daConversa;
       }
     }
-    final String titulo = tituloCru.isEmpty() ? "" : Texto.limpar(tituloCru, Ponte.MAXIMO_TITULO);
+    if (chave.endsWith("@g.us")) grupo = true;       // (a chamada perdida de um grupo, achada pelo título)
+    l.chave = chave;
+    l.grupo = grupo;
+    l.titulo = tituloCru.isEmpty() ? "" : Texto.limpar(tituloCru, Ponte.MAXIMO_TITULO);
+    return l;
+  }
+
+  /** @param aoLigar a notificação já estava aberta quando a ponte ligou */
+  private void processar(StatusBarNotification sbn, boolean aoLigar) {
+    if (Ponte.ehWhatsApp(sbn.getPackageName()) && sbn.getNotification() != null && sbn.getNotification().extras != null)
+      diagnosticar(sbn, sbn.getNotification(), sbn.getNotification().extras);
+    final Lida l = ler(sbn);
+    if (l == null) return;
+    final String chave = l.chave, titulo = l.titulo, eu = l.eu;
+    final boolean grupo = l.grupo;
+    final Notification.Action responder = l.responder;
+    final List<Novidades.Msg> todas = l.todas;
     final long agora = Ponte.agora();
     final int numero = conversas.numero(chave, titulo, agora);
     if (responder != null) respostas.put(numero, new Botao(chave, responder));
@@ -256,8 +300,11 @@ public class Ouvinte extends NotificationListenerService {
     // só anota que já viu
     final boolean repassar = Ponte.ligada(this) && !(grupo && !Ponte.grupos(this)) && !Ponte.silenciada(this, chave);
     final List<String> vistasAgora = new ArrayList<>();
-    for (Novidades.Msg m : todas)
-      if (!repassar || !novas.contains(m)) vistasAgora.add(Novidades.marca(m));
+    for (Novidades.Msg m : todas) {
+      final String k = Novidades.marca(m);
+      if (esperando != null && esperando.contains(k)) continue;   // na fila: só conta como vista quando sair (mandar)
+      if (!repassar || !novas.contains(m)) vistasAgora.add(k);
+    }
     if (!vistasAgora.isEmpty()) gravarMarcas(chave, vistasAgora);
     if (!repassar) return;
     for (Novidades.Msg m : novas) {
@@ -420,7 +467,7 @@ public class Ouvinte extends NotificationListenerService {
     if (chave == null) return "não conheço a conversa " + numero + ". Mande WA? para ver a lista.";
     final String titulo = conversas.titulo(numero);
     final String quem = titulo != null && !titulo.isEmpty() ? titulo : "a conversa " + numero;
-    if (codigo == null) return "a resposta veio sem o código da conversa: responda pela própria mensagem, no Tijolo.";
+    if (codigo == null) return SmsRecebido.SEM_CODIGO;
     if (!codigo.equals(Protocolo.codigo(chave)))
       return "a conversa " + numero + " agora é outra (" + quem + "), então a resposta não foi, para não ir à " +
           "pessoa errada. Responda numa mensagem mais nova.";
@@ -458,18 +505,8 @@ public class Ouvinte extends NotificationListenerService {
       final StatusBarNotification[] ativas = getActiveNotifications();
       if (ativas == null) return null;
       for (StatusBarNotification s : ativas) {
-        if (!Ponte.ehWhatsApp(s.getPackageName())) continue;
-        final Notification n = s.getNotification();
-        if (n == null || n.extras == null) continue;
-        String k = chaveDa(s, n);
-        if (k == null) {
-          final String t = tituloDa(n.extras, ehGrupo(n.extras));
-          if (t.isEmpty()) continue;
-          k = "titulo:" + t;
-        }
-        if (!k.equals(chave)) continue;
-        final Notification.Action a = acaoDeResponder(n);
-        if (a != null) return a;
+        final Lida l = ler(s);       // a mesma leitura do processar: a mesma chave
+        if (l != null && l.responder != null && l.chave.equals(chave)) return l.responder;
       }
     } catch (Exception e) {
       Ponte.registrar(this, "Erro ao procurar a notificação: " + e);

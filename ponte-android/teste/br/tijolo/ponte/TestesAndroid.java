@@ -222,7 +222,10 @@ public class TestesAndroid {
     doTijolo("WA#5ab oi");
     sms("WA! Não conheço a conversa 5. Mande WA? para ver a lista.", "conversa desconhecida");
     doTijolo("WA#1 oi");
-    sms("WA! A resposta veio sem o código da conversa: responda pela própria mensagem, no Tijolo.", "sem o código");
+    sms("WA! " + SmsRecebido.SEM_CODIGO, "sem o código (mensagem de antes da atualização)");
+    doTijolo("WA-1");
+    sms("WA! " + SmsRecebido.SEM_CODIGO, "silenciar sem o código: não silencia ninguém");
+    confere(!Ponte.silenciada(app, MARIA), "e não silenciou");
     final String errado = m.equals("zz") ? "yy" : "zz";
     doTijolo("WA#1" + errado + " oi");
     confere(novasSms().startsWith("WA! A conversa 1 agora é outra (Maria)"), "código errado: não vai");
@@ -450,10 +453,16 @@ public class TestesAndroid {
     novoMundo();
     estatico(Ouvinte.class, "instancia", null);   // parou de ouvir
     final int religa = NotificationListenerService.religacoes;
+    android.content.pm.PackageManager.mudancas.clear();
     Despertador.vigiar(app);
     confere(NotificationListenerService.religacoes == religa + 1, "pede para religar");
+    confere(android.content.pm.PackageManager.mudancas.isEmpty(), "na primeira, só pede (o Android pode estar ligando)");
     sms("", "uma vigia só não avisa (pode estar religando)");
     Despertador.vigiar(app);
+    confere(android.content.pm.PackageManager.mudancas.size() == 2 &&
+        android.content.pm.PackageManager.mudancas.get(0).endsWith("Ouvinte=2") &&
+        android.content.pm.PackageManager.mudancas.get(1).endsWith("Ouvinte=0"), "na segunda, tira e põe o ouvinte de novo: " +
+        android.content.pm.PackageManager.mudancas);
     sms("WA! A ponte parou de ouvir o WhatsApp. Abra o app Ponte do Tijolo no Android.", "duas seguidas: avisa");
     Despertador.vigiar(app);
     sms("", "avisa uma vez só");
@@ -471,6 +480,138 @@ public class TestesAndroid {
     SmsManager.responder(-1);
     final String ultima = Ponte.registro(app).split("\n")[0];
     confere(ultima.contains("→ Tijolo: WA#1ab Pedro última linha") && ultima.endsWith("(2 partes)"), "enviada: " + ultima);
+
+    System.out.println("17. a notificação volta com a mensagem que está juntando, e o app morre");
+    novoMundo();
+    postar(conversa("Maria", MARIA, maria, "Maria", "A", -1));
+    avancar(3_000);
+    final StatusBarNotification ab = sbn(conversa("Maria", MARIA, maria, "Maria", "A", -1, "Maria", "B", -4));
+    NotificationListenerService.abertas = new StatusBarNotification[] {ab};
+    ouvinte.onNotificationPosted(ab);
+    avancar(2_000);
+    SystemClock.zerar();                          // o Android mata o app (sem onDestroy)
+    estatico(Ouvinte.class, "instancia", null);
+    estatico(Ponte.class, "conversas", null);
+    estatico(Ponte.class, "saida", null);
+    ouvinte = new Ouvinte();
+    ouvinte.onCreate();
+    ouvinte.onListenerConnected();
+    avancar(9_000);
+    sms("WA#1" + m + " Maria\nA\nB", "as duas vão (a A não contou como vista enquanto juntava)");
+
+    System.out.println("18. sem sinal por um tempo: quando volta, a fila anda na ordem e na hora");
+    novoMundo();
+    postar(conversa("Maria", MARIA, maria, "Maria", "primeira", -1));
+    avancar(9_000);
+    SmsManager.responder(4);                      // sem sinal
+    avancar(61_000);
+    SmsManager.responder(4);
+    avancar(121_000);
+    SmsManager.responder(4);                      // agora a fila espera 5 min
+    final int tentou = SmsManager.enviadas.size();
+    final PendingIntent pedro2 = new PendingIntent(null);
+    postar(conversa("Pedro", PEDRO, pedro2, "Pedro", "segunda", -2));
+    avancar(9_000);
+    confere(SmsManager.enviadas.size() == tentou, "a fila inteira espera (a nova também)");
+    confere(SmsManager.avisos.isEmpty() && Ponte.saida(app).pendentes() == 2, "as duas na fila");
+    Ponte.saida(app).tentarAgora();               // o botão "Tentar mandar a fila agora"
+    Ponte.esvaziarSaida(app);
+    vistas = tentou;
+    sms("WA#1" + m + " Maria\nprimeira|WA#2" + pe + " Pedro\nsegunda", "na hora, e a mais antiga primeiro");
+
+    System.out.println("19. pausar tira da fila o que ainda não saiu");
+    novoMundo();
+    for (int i = 0; i < 25; i++)
+      postar(conversa("Pessoa " + i, "55119000" + (2000 + i) + "@s.whatsapp.net", new PendingIntent(null), "Pessoa " + i, "oi " + i, -1));
+    avancar(9_000);
+    radioOk();
+    vistas = SmsManager.enviadas.size();          // as 20 do primeiro minuto
+    doTijolo("WA-");
+    avancar(61_000);
+    sms("WA! Ponte pausada: o WhatsApp não vem para o Tijolo até você mandar WA+ (5 mensagens que estavam na fila não vão).",
+        "o aviso vai primeiro, e as 5 que esperavam não vão");
+    avancar(61_000);
+    sms("", "nada mais");
+
+    System.out.println("20. Android 15: a mensagem escondida vai uma vez só");
+    novoMundo();
+    for (int k = 0; k < 3; k++) {
+      final Notification esc = new Notification();
+      esc.extras.putCharSequence("android.title", "");
+      final Bundle bb = new Bundle();
+      bb.putCharSequence("sender", "");
+      bb.putCharSequence("text", "Conteúdo de notificação sensível oculto");
+      bb.putLong("time", T0 + 1000L * k);         // o Android põe a hora de agora a cada vez
+      esc.extras.putParcelableArray("android.messages", new Parcelable[] {bb});
+      esc.actions = new Notification.Action[] {new Notification.Action(new PendingIntent(null), new RemoteInput("resposta", true))};
+      esc.atalho = MARIA;
+      postar(esc);
+      avancar(9_000);
+    }
+    sms("WA#1" + m + " Conversa 1\nConteúdo de notificação sensível oculto", "uma SMS só, não três");
+
+    System.out.println("21. pelo título: a notificação \"Você\" ainda serve para responder");
+    novoMundo();
+    final PendingIntent ana1 = new PendingIntent(null), ana2 = new PendingIntent(null);
+    postar(conversa("Ana", null, ana1, "Ana", "oi", -1));
+    avancar(9_000);
+    sms("WA#1" + cod("titulo:Ana") + " Ana\noi", "pelo título");
+    ana1.cancelado = true;                        // o botão guardado não serve mais...
+    NotificationListenerService.abertas = new StatusBarNotification[] {
+        sbn(conversa("Você", null, ana2, "Ana", "oi", -1, null, "tudo?", -2))};
+    doTijolo("WA#1" + cod("titulo:Ana") + " e aí?");
+    confere("e aí?".equals(respondido(ana2)), "...mas o da notificação aberta (\"Você\") serve");
+    sms("", "sem aviso de erro");
+
+    System.out.println("22. chamada perdida de um grupo, com os grupos desligados");
+    novoMundo();
+    postar(grupo("Família", FAMILIA, new PendingIntent(null), "João", "oi", -1));
+    avancar(70_000);
+    final Notification chamadaGrupo = new Notification();
+    chamadaGrupo.extras.putCharSequence("android.title", "Família");
+    chamadaGrupo.extras.putCharSequence("android.text", "Chamada de voz perdida");
+    chamadaGrupo.when = T0 + 5_000;
+    postar(chamadaGrupo);
+    avancar(70_000);
+    sms("", "não vem (é do grupo)");
+
+    System.out.println("23. a SMS que a ponte mandou não volta como pedido");
+    novoMundo();
+    final PendingIntent maria3 = new PendingIntent(null);
+    postar(conversa("Maria", MARIA, maria3, "Maria", "Oi, tudo bem?", -1));
+    avancar(9_000);
+    sms("WA#1" + m + " Maria\nOi, tudo bem?", "mandou");
+    doTijolo("WA#1" + m + " Maria\nOi, tudo bem?");     // o "número do Tijolo" é o deste Android
+    confere(maria3.enviados.isEmpty(), "não respondeu à Maria com o próprio texto");
+    confere(Ponte.registro(app).contains("Ignorei uma SMS igual"), "e anotou por quê");
+
+    System.out.println("24. dois dias sem conseguir mandar: desiste e avisa");
+    novoMundo();
+    postar(conversa("Maria", MARIA, maria, "Maria", "esta não chega", -1));
+    avancar(9_000);
+    for (int h = 0; h < 60 && Ponte.saida(app).pendentes() > 0 && !Ponte.registro(app).contains("Desisti"); h++) {
+      SmsManager.responder(1);
+      avancar(61 * 60_000);
+    }
+    confere(Ponte.registro(app).contains("Desisti de 1 SMS"), "desistiu e anotou");
+    SmsManager.responder(-1);
+    radioOk();
+    final String fim = SmsManager.enviadas.get(SmsManager.enviadas.size() - 1)[1];
+    confere(fim.equals("WA! 1 mensagem do WhatsApp não chegou ao Tijolo: a ponte passou 2 dias sem conseguir mandar SMS."),
+        "e avisa o Tijolo quando volta: " + fim);
+    vistas = SmsManager.enviadas.size();
+
+    System.out.println("25. o relógio pula 3 dias: a fila não some");
+    novoMundo();
+    postar(conversa("Maria", MARIA, maria, "Maria", "antes do pulo", -1));
+    avancar(9_000);
+    SmsManager.responder(1);
+    Ponte.desvio += 3L * 24 * 3600 * 1000;        // o relógio do Android pulou
+    avancar(61_000);
+    final String depois = novasSms();
+    confere(depois.endsWith("Maria\nantes do pulo|WA#1" + m + " Maria\nantes do pulo") || depois.contains("antes do pulo"),
+        "tentou de novo e foi: " + depois);
+    confere(Ponte.saida(app).pendentes() == 0, "saiu da fila");
 
     System.out.println("\n" + verificacoes + " verificações, " + falhas + " falha(s)");
     System.exit(falhas == 0 ? 0 : 1);

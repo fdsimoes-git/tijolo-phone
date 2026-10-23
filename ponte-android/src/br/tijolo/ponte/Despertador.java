@@ -21,18 +21,25 @@ public class Despertador extends BroadcastReceiver {
     if (Ouvinte.ouvindo()) {
       if (Ponte.opcoes(c).getInt("vigia_falhas", 0) != 0 || Ponte.opcoes(c).getBoolean("vigia_avisou", false)) {
         if (Ponte.opcoes(c).getBoolean("vigia_avisou", false))
-          Ponte.enviar(c, Protocolo.aviso("A ponte voltou a ouvir o WhatsApp."));
+          Ponte.avisar(c, Protocolo.aviso("A ponte voltou a ouvir o WhatsApp."));
         Ponte.opcoes(c).edit().putInt("vigia_falhas", 0).putBoolean("vigia_avisou", false).apply();
       }
       return;
     }
-    Ouvinte.religar(c);
     final int falhas = Ponte.opcoes(c).getInt("vigia_falhas", 0) + 1;
     Ponte.opcoes(c).edit().putInt("vigia_falhas", falhas).apply();
-    Ponte.registrar(c, "Vigia: a ponte não está ouvindo o WhatsApp (pedi para religar).");
+    // Na primeira vez só pede (o app pode ter acabado de abrir e o Android ainda estar ligando o
+    // ouvinte); na segunda, tira e põe de novo o ouvinte no app
+    if (falhas == 1) {
+      Ouvinte.religar(c);
+      Ponte.registrar(c, "Vigia: a ponte não está ouvindo o WhatsApp (pedi ao Android para religar).");
+    } else {
+      Ouvinte.religarForte(c);
+      Ponte.registrar(c, "Vigia: a ponte continua sem ouvir o WhatsApp (tirei e pus de novo o ouvinte).");
+    }
     if (falhas >= 2 && !Ponte.opcoes(c).getBoolean("vigia_avisou", false)) {
       Ponte.opcoes(c).edit().putBoolean("vigia_avisou", true).apply();
-      Ponte.enviar(c, Protocolo.aviso("A ponte parou de ouvir o WhatsApp. Abra o app Ponte do Tijolo no Android."));
+      Ponte.avisar(c, Protocolo.aviso("A ponte parou de ouvir o WhatsApp. Abra o app Ponte do Tijolo no Android."));
     }
   }
 }

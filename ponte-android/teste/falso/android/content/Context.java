@@ -16,6 +16,10 @@ public class Context {
 
   public Context getApplicationContext() { return this; }
 
+  public static final android.content.pm.PackageManager PACOTES = new android.content.pm.PackageManager();
+
+  public android.content.pm.PackageManager getPackageManager() { return PACOTES; }
+
   public Object getSystemService(String nome) {
     if (ALARM_SERVICE.equals(nome)) return ALARMES;
     if (POWER_SERVICE.equals(nome)) return ENERGIA;

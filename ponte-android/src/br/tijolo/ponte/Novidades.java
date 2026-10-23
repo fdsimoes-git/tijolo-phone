@@ -103,9 +103,20 @@ public final class Novidades {
     return r;
   }
 
-  /** A marca de uma mensagem: dois hashes de 32 bits de hora + texto. */
+  /**
+   * A marca de uma mensagem: dois hashes de 32 bits de hora + texto. Sem o
+   * nome do autor ("" = alguém sem nome: o Android 15 escondendo uma
+   * mensagem com código), só o texto: o Android põe a hora de agora a cada
+   * vez que mostra a notificação escondida, e a mesma mensagem não deve ir
+   * de novo.
+   */
   public static String marca(Msg m) {
-    final String s = m.hora + "\u0001" + (m.texto == null ? "" : m.texto);
+    final String texto = m.texto == null ? "" : m.texto;
+    return hash(m.autor != null && m.autor.isEmpty() ? "\u0002" + texto : m.hora + "\u0001" + texto);
+  }
+
+  /** Dois hashes de 32 bits do texto */
+  public static String hash(String s) {
     int fnv = 0x811C9DC5;
     for (int i = 0; i < s.length(); i++) {
       fnv ^= s.charAt(i);

@@ -150,14 +150,38 @@ public final class Ponte {
 
   /**
    * O número do Tijolo como digitado, arrumado: "+55 11 98888-7777" →
-   * "+5511988887777"; "11 98888-7777" → "11988887777". null se curto demais.
+   * "+5511988887777"; "11 98888-7777" → "11988887777"; "011 98888-7777" →
+   * "11988887777". null se não der para usar (veja motivoNumero).
    */
   public static String arrumarNumero(String digitado) {
+    if (digitado == null) return null;
+    String d = digitos(digitado);
+    boolean mais = digitado.trim().startsWith("+");
+    // "+11 98888-7777": o + sobrou (um número dos EUA não tem 9 no 3º dígito)
+    if (mais && !d.startsWith("55") && d.length() == 11 && d.charAt(2) == '9') mais = false;
+    if (!mais && d.startsWith("0") && (d.length() == 11 || d.length() == 12)) d = d.substring(1);   // 0 + DDD
+    if (!mais && d.startsWith("55") && (d.length() == 12 || d.length() == 13)) mais = true;
+    if (mais) {
+      if (d.startsWith("55") && d.length() == 12 && celularSemNove(d.substring(2))) return null;
+      return d.length() >= 10 ? "+" + d : null;
+    }
+    if (d.length() == 11) return d;
+    if (d.length() == 10 && !celularSemNove(d)) return d;     // fixo: 2 a 5 depois do DDD
+    return null;
+  }
+
+  /** Por que o número não serve (para a tela), ou null se serve */
+  public static String motivoNumero(String digitado) {
+    if (arrumarNumero(digitado) != null) return null;
     final String d = digitos(digitado);
-    if (d.length() < 10) return null;
-    final boolean mais = digitado.trim().startsWith("+");
-    if (mais || (d.startsWith("55") && (d.length() == 12 || d.length() == 13))) return "+" + d;
-    return d;
+    final String n = d.startsWith("55") && d.length() >= 12 ? d.substring(2) : d.startsWith("0") ? d.substring(1) : d;
+    if (n.length() == 10 && celularSemNove(n)) return "Celular tem 11 dígitos com o DDD: falta o 9 depois do DDD?";
+    return "Escreva o número com DDD (11 dígitos, como 11 98888-7777).";
+  }
+
+  // DDD + 8 dígitos começando com 6 a 9: é celular sem o 9 da frente
+  private static boolean celularSemNove(String d) {
+    return d.length() == 10 && d.charAt(2) >= '6';
   }
 
   /**
@@ -176,9 +200,15 @@ public final class Ponte {
   // SMS para o Tijolo: tudo passa pela caixa de saída
   // ----------------------------------------------------------------------
 
-  /** Põe na fila e tenta mandar já. */
+  /** Põe no fim da fila (as mensagens do WhatsApp) e tenta mandar já. */
   public static void enviar(Context c, String texto) {
     saida(c).adicionar(texto, agora());
+    esvaziarSaida(c);
+  }
+
+  /** Um aviso ou resposta da ponte ("WA!", "WA?"): passa na frente das mensagens */
+  public static void avisar(Context c, String texto) {
+    saida(c).adicionarNaFrente(texto, agora());
     esvaziarSaida(c);
   }
 
@@ -188,6 +218,13 @@ public final class Ponte {
     while (true) {
       final long agora = agora();
       final Saida.Item i = s.proxima(agora);
+      final int velhas = s.tirarDescartadas();
+      if (velhas > 0) {
+        registrar(c, "Desisti de " + velhas + " SMS: 2 dias sem conseguir mandar.");
+        s.adicionarNaFrente(Protocolo.aviso(velhas + (velhas == 1 ? " mensagem do WhatsApp não chegou" :
+            " mensagens do WhatsApp não chegaram") + " ao Tijolo: a ponte passou 2 dias sem conseguir mandar SMS."), agora);
+        continue;
+      }
       if (i == null) {
         final long quando = s.proximaHora(agora);
         if (quando > 0) agendar(c, ACAO_SAIDA, quando);
@@ -195,7 +232,11 @@ public final class Ponte {
       }
       final String numero = numeroTijolo(c);
       if (digitos(numero).length() < 10) {
-        registrar(c, "Sem o número do Tijolo: a SMS espera na fila.");
+        // uma vez só (até o número ser guardado): as SMS esperam na fila
+        if (!opcoes(c).getBoolean("avisou_sem_numero", false)) {
+          opcoes(c).edit().putBoolean("avisou_sem_numero", true).apply();
+          registrar(c, "Sem o número do Tijolo: as SMS esperam na fila até ele ser guardado.");
+        }
         agendar(c, ACAO_SAIDA, agora + 10 * 60 * 1000);
         return;
       }
@@ -208,19 +249,20 @@ public final class Ponte {
       try {
         final ArrayList<PendingIntent> avisos = new ArrayList<>();
         final int imutavel = Build.VERSION.SDK_INT >= 23 ? 0x04000000 /* FLAG_IMMUTABLE */ : 0;
+        s.enviando(i, partes.size(), agora);
         for (int p = 0; p < partes.size(); p++) {
           final Intent it = new Intent(c, SmsEnviada.class);
           it.putExtra("id", i.id);
+          it.putExtra("tentativa", i.tentativas);
           it.putExtra("resumo", resumo(i.texto));
           it.putExtra("parte", p + 1);
           it.putExtra("partes", partes.size());
           avisos.add(PendingIntent.getBroadcast(c, proximoCodigo(), it, PendingIntent.FLAG_UPDATE_CURRENT | imutavel));
         }
-        s.enviando(i, partes.size(), agora);
         sms.sendMultipartTextMessage(numero, null, partes, avisos, null);
       } catch (Exception e) {
         registrar(c, "Erro ao mandar SMS: " + e.getMessage());
-        s.resultado(i.id, false, agora);
+        s.resultado(i.id, i.tentativas, false, agora);
       }
     }
   }

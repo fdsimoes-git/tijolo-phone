@@ -15,6 +15,7 @@ A conta continua no app oficial: a ponte só lê as notificações e usa o botã
 ## Do que precisa
 
 - Um Android **6.0 ou mais novo** (de preferência 8 ou mais novo) **que ainda rode o WhatsApp oficial**. Desde 8/9/2026 o WhatsApp não funciona no Android 5. Ele fica em casa, na tomada e no Wi-Fi.
+  - **Não serve um celular "Android Go"** (os baratos de 1 GB, com "Go" na versão do Android) com Android 10 ou mais velho: neles o Android não deixa nenhum app ler as notificações.
 - **Um chip só para esse Android**, com SMS. O seu número continua no chip do Tijolo. Um pré-pago com SMS ilimitado é o ideal: cada mensagem do WhatsApp vira uma SMS (veja *Custos*). Tire o PIN desse chip (veja *Deixar a ponte em casa*).
 - **Um computador** (Windows, Mac ou Linux) e o cabo USB do Android, só para instalar o app.
 - O arquivo `PonteDoTijolo.apk`.
@@ -63,6 +64,7 @@ A conta continua no app oficial: a ponte só lê as notificações e usa o botã
    adb shell appops set br.tijolo.ponte RECEIVE_SENSITIVE_NOTIFICATIONS allow
    ```
    Depois, reinicie o Android. Outra saída é desligar as *Notificações aprimoradas* do Android (Configurações → Notificações), mas aí somem também as respostas sugeridas.
+   Sem nenhum dos dois, a mensagem escondida chega ao Tijolo uma vez, como *"Conteúdo de notificação sensível oculto"*, e as seguintes da mesma conversa podem continuar escondidas até a notificação dela ser limpa no Android.
 8. **Desligue a depuração USB** quando terminar (Opções do desenvolvedor). Ligada, qualquer computador que você já autorizou mexe no Android pelo cabo.
 
 **Atualizar o app**: os mesmos passos, com `adb install -r PonteDoTijolo.apk`. O `-r` instala por cima e o app guarda o número do Tijolo e as conversas. Isso só funciona se a versão nova foi assinada com a **mesma chave** (veja *Montar o app*).
@@ -78,7 +80,7 @@ Dá para desligar a verificação do Play Protect: Play Store → toque na sua f
 
 Abra o **Ponte do Tijolo** e siga a tela de cima para baixo. Cada linha com ✗ diz o que falta.
 
-1. **O número do Tijolo**, com DDD (o do chip que está no Tijolo) → *Guardar o número*. Pode escrever com ou sem o +55.
+1. **O número do Tijolo**, com DDD (o do chip que está no Tijolo, **não** o deste Android) → *Guardar o número*. Pode escrever com ou sem o +55.
 2. **Permitir SMS** → Permitir.
 3. **Acesso às notificações** → ligue o *Ponte do Tijolo* → Permitir.
    - Só se você instalou sem computador, no Android 13 ou mais novo: se aparecer *Configuração restrita*, volte ao app e toque em **Informações do app**. No menu ⋮ (canto de cima), escolha **Permitir configurações restritas** e repita este passo. Se o SMS também for bloqueado assim, vale o mesmo.
@@ -118,9 +120,12 @@ Ele fica guardado. Para testar o caminho de ida e volta, use `ponte lista`: a po
   - **sem bloqueio**, a ponte volta sozinha, mas quem tiver o Android na mão tem o seu WhatsApp inteiro.
 
   Na tomada e com bateria, o Android aguenta faltas de luz curtas sem reiniciar.
-- **A vigia**: a cada 30 minutos a ponte confere se ainda está ouvindo o WhatsApp. Se parou, ela tenta religar sozinha. Se não conseguir, o Tijolo recebe *"A ponte parou de ouvir o WhatsApp"* e, quando ela voltar, *"A ponte voltou a ouvir o WhatsApp"*.
-- **A fila**: uma SMS que não sai (sem sinal, sem crédito) fica na fila do app e é tentada de novo depois de 1, 2, 5, 10, 30 e 60 minutos, e depois de hora em hora. Depois de 2 dias tentando, ela é descartada. O app mostra quantas estão esperando; *Tentar mandar a fila agora* tenta na hora.
-- **Segurança**: quem tem o Android da ponte na mão tem o seu WhatsApp. Deixe-o num lugar seguro, como deixaria o seu celular.
+- **A vigia**: a cada 30 minutos a ponte confere se ainda está ouvindo o WhatsApp. Se parou, ela tenta religar. Se continuar sem ouvir na vigia seguinte, o Tijolo recebe *"A ponte parou de ouvir o WhatsApp"* e, quando ela voltar, *"A ponte voltou a ouvir o WhatsApp"*. Se o aviso chegar, abra o app no Android; se ele não voltar a ouvir, desligue e ligue de novo o acesso às notificações.
+- **A fila**: uma SMS que não sai (sem sinal, sem crédito) fica na fila do app, e a fila inteira espera 1, 2, 5, 10 e 30 minutos e depois tenta de hora em hora, sempre pela mensagem mais antiga. Quando uma SMS sai, a fila anda na hora. Depois de 2 dias sem conseguir, as mensagens mais velhas que isso saem da fila e o Tijolo recebe um aviso dizendo quantas se perderam. O app mostra quantas estão esperando; *Tentar mandar a fila agora* esquece a espera e tenta na hora (use quando o sinal ou o crédito voltar).
+- **Pausar e silenciar limpam a fila**: *Pausar o WhatsApp* tira da fila as mensagens que ainda não saíram, e *Silenciar a conversa* tira as daquela conversa. O aviso da ponte passa na frente delas.
+- **Segurança**:
+  - quem tem o Android da ponte na mão tem o seu WhatsApp. Deixe-o num lugar seguro, como deixaria o seu celular;
+  - a ponte só obedece a SMS do número do Tijolo, mas o número de quem manda uma SMS pode ser falsificado. **Não divulgue o número do chip da ponte**: quem souber dele e conseguir falsificar o remetente poderia mandar respostas pelo seu WhatsApp.
 
 ## Usando
 
@@ -132,6 +137,8 @@ Ele fica guardado. Para testar o caminho de ida e volta, use `ponte lista`: a po
 - **Fotos, áudios, figurinhas**: chegam como `[foto]`, `[audio]`... com a legenda, se houver. Para ver a foto, só no Android.
 - **Emoji**: os comuns viram sinais (`:)` `:D` `<3` `(ok)`). Os outros somem; se a mensagem era só emoji, chega `[emoji]`.
 - **Chamada do WhatsApp**: não dá para atender, mas a chamada perdida chega como mensagem.
+
+**Atualize o Tijolo e a ponte juntos.** O firmware do Tijolo de antes do código das conversas mostra as SMS da ponte nova como SMS comuns ("WA#7xk Maria..."). E, no Tijolo, as mensagens do WhatsApp que chegaram antes da atualização não servem mais para responder: a ponte avisa e é só responder a uma mensagem mais nova.
 
 ### O número e o código de cada conversa
 
@@ -189,4 +196,4 @@ sh testar.sh             # só os testes
   - `Protocolo`, `Texto`, `Conversas`, `Novidades` e `Saida`: a lógica em Java puro. É ela que decide o formato das SMS, como limpar o texto, o número e o código de cada conversa, o que é mensagem nova e quando tentar de novo.
 - `teste/`: a lógica testada no computador. `TestesAndroid` roda o caminho inteiro com um Android de mentira (`teste/falso/`): de notificação a SMS, de SMS à resposta, a fila, a vigia e o reinício.
 - **A chave que assina o app** fica em `chave/ponte.jks`, e a senha dela em `chave/senha.txt`. As duas são criadas na primeira montagem (a senha é sorteada) e ficam **fora do git**. Quem tiver a chave e a senha pode fazer uma "atualização" que lê o seu WhatsApp. Guarde uma cópia das duas num lugar seguro. Para instalar uma versão nova por cima da antiga, é preciso a **mesma** chave. Com outra chave, o Android só aceita depois de desinstalar a antiga, e aí o app esquece o número do Tijolo e as conversas.
-  - As chaves criadas antes da senha sorteada usam a senha antiga, `ponte-do-tijolo` (o `construir.sh` sabe disso). Também dá para passar a senha em `PONTE_SENHA`.
+  - Também dá para passar a senha em `PONTE_SENHA`.
