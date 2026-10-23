@@ -10,6 +10,7 @@ O firmware é o **TijoloOS**, feito por fases:
 | 2 | Tela ILI9341 + teclado 3×4 (o 1 e o 3, segurados, fazem as vezes dos botões verde e vermelho): tela inicial, discador, chamadas, SMS recebidos, saldo, liga/desliga | pronta, testada na placa |
 | 3a | Menu, escrever SMS pelo teclado (multitoque), caixa de mensagens na memória do Tijolo (ler, responder, encaminhar, apagar, reenviar) | pronta, testada na placa |
 | 4 | **WhatsApp pela ponte**: um Android em casa, com o WhatsApp oficial, repassa as mensagens por SMS e devolve as respostas (app em [`ponte-android/`](ponte-android/README.md)) | pronta, falta testar na placa |
+| 4 | **Montagem final**: placa ilhada encaixada nas barras da LILYGO, quase sem fios, e caixa impressa em 3D ([`montagem/`](montagem/README.md)) | desenhada; falta medir as peças, encomendar a caixa e montar |
 | 3b | Agenda de contatos (na memória do Tijolo), histórico de chamadas, despertador | depois |
 | — | Modo roteador (compartilhar o 4G por Wi-Fi) | opcional |
 
@@ -22,6 +23,7 @@ O Monitor Serial continua aceitando todos os comandos da Fase 1.
 - Tela TFT de 2,4" SPI com ILI9341 (240×320, sem touch)
 - Teclado matricial 3×4 (12 teclas, 7 fios)
 - Protoboard e jumpers (os 2 botões de pressão do kit Eletrogate são opcionais: sem eles, o 1 e o 3 seguradas fazem o papel deles)
+- Para a montagem final: placa ilhada dupla face, 14 chaves tácteis 6×6×5 mm, uma barra de pinos, fita Kapton e a caixa impressa em 3D (a lista completa está no guia de montagem; veja [Montagem final](#montagem-final-placa-ilhada-e-caixa))
 
 ## Montagem da Fase 1 (modem e áudio)
 
@@ -51,6 +53,14 @@ Com a chave em OFF e sem USB. Se as barras de pinos vieram soltas, solde-as prim
 **Sem botões** (o padrão): segurar o **1** vale o verde e segurar o **3** vale o vermelho. Com os botões, os dois jeitos funcionam. Nos botões de 4 perninhas, use duas em diagonal. O GND dos botões pode vir do GND de cima da barra do lado das USB.
 
 A tela divide o SPI com o cartão TF da placa (IO11/IO12); o firmware deixa o CS do cartão (IO10) em nível alto.
+
+## Montagem final (placa ilhada e caixa)
+
+Para sair da protoboard: uma placa ilhada de 18 × 51 furos leva as 14 teclas (12 do teclado mais o verde e o vermelho, em chaves tácteis) e a tela, e encaixa direto nas duas barras de pinos da LILYGO, com dois plásticos de barra entre as placas. Na frente da placa não corre nenhum fio, só pontes de solda; os 19 fios ficam atrás, curtos. Uma caixa impressa em 3D (50 × 141 × 38 mm) fecha tudo, com a antena colada por dentro, o alto-falante virado para uma grade em cima e o microfone embaixo.
+
+- **O guia de montagem** ([página "Montagem do Tijolo"](https://claude.ai/artifact/CuJ8r7VZzr5Dn8WH7geubx), privada até ser compartilhada) tem o passo a passo em 12 passos, com os desenhos furo a furo, os testes com o multímetro antes de juntar as placas, a vista 3D da caixa e um formulário com as medidas para conferir antes de encomendar a impressão.
+- **Os scripts** que geram o guia, os desenhos e a caixa estão em [`montagem/`](montagem/README.md).
+- **O firmware**: com `#define MONTAGEM_PLACA 1` no `config.h`, os botões passam a ser de verdade (verde no IO35, vermelho no IO21, que acorda a ESP32) e a coluna 1 4 7 * do teclado vai para o IO17. Depois de gravar, ensine o teclado de novo (segure o 1 enquanto aparece "Ligando o modem…").
 
 ## Gravar e abrir o monitor
 
