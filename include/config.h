@@ -63,6 +63,18 @@ constexpr bool COMPLETAR_MAIS55 = true;
 //  NÃO use IO1 nem IO41: eles têm resistores de 5,1 kΩ até a
 //  alimentação da câmera, que fica desligada, e leriam errado.
 // ============================================================
+// Montagem:
+//   0 = na protoboard, com fios (Fase 2): o teclado nos 7 pinos IO40..IO21 e
+//       os botões opcionais (BOTAO_VERDE / BOTAO_VERMELHO abaixo);
+//   1 = na placa ilhada da frente: 12 teclas na placa, a coluna 1 4 7 * no
+//       IO17, botão verde no IO35 e vermelho no IO21;
+//   2 = na placa de circuito da frente, com a LILYGO de costas
+//       (montagem/README.md): os mesmos pinos do 1 e a tela de cabeça para
+//       baixo (os pinos dela embaixo), então a imagem gira 180°.
+// Trocou? Ensine o teclado de novo: segure o 1 enquanto aparece "Ligando o modem…"
+// (ou "teclado aprender" no Monitor Serial).
+#define MONTAGEM_PLACA 0
+
 // Tela no mesmo SPI do cartão SD da placa (IO11/IO12), com CS próprio.
 constexpr int TELA_SCK  = 12;   // na tela: SCK          (barra J1, pino 14)
 constexpr int TELA_MOSI = 11;   // na tela: SDI (MOSI)   (J1-13)
@@ -73,7 +85,8 @@ constexpr int TELA_LUZ  = 36;   // na tela: LED          (J1-7); -1 se o LED for
 constexpr int PINO_SD_CS = 10;  // CS do cartão SD da placa: fica em HIGH para o SD não atrapalhar
 
 constexpr uint32_t TELA_SPI_HZ = 40000000;  // se aparecer chuvisco ou cores erradas: 27000000
-constexpr uint8_t  TELA_ROTACAO = 0;        // 0 = em pé; 2 se a imagem ficar de cabeça para baixo
+// 0 = em pé; 2 se a imagem ficar de cabeça para baixo (a montagem 2 já vem com 2)
+constexpr uint8_t  TELA_ROTACAO = MONTAGEM_PLACA == 2 ? 2 : 0;
 constexpr bool TELA_INVERTER_CORES = false; // fundo branco em vez de preto? mude para true
 constexpr bool TELA_TROCAR_RGB = false;     // vermelho e azul trocados? mude para true
 constexpr uint8_t  BRILHO_MAXIMO = 255;     // 0 a 255; menos = bateria dura mais
@@ -101,15 +114,6 @@ constexpr uint32_t TELA_VIGIA_MS = 2000;
 // de 10 kΩ entre J2-4 (GND) e J2-5 (IO2/SCL). A placa já tem 10 kΩ do IO2
 // para o 3V3, então o IO2 fica com metade do 3V3. Sem o resistor, nada muda.
 constexpr int PINO_MEDIR_3V3 = 2;
-
-// Montagem:
-//   0 = na protoboard, com fios (Fase 2): o teclado de membrana nos 7 pinos
-//       IO40..IO21 e os botões opcionais (BOTAO_VERDE / BOTAO_VERMELHO abaixo);
-//   1 = na placa da frente (montagem/README.md): 12 teclas na placa, a coluna
-//       1 4 7 * no IO17, botão verde no IO35 e vermelho no IO21.
-// Trocou? Ensine o teclado de novo: segure o 1 enquanto aparece "Ligando o modem…"
-// (ou "teclado aprender" no Monitor Serial).
-#define MONTAGEM_PLACA 0
 
 // Teclado 3×4: os 7 fios, EM QUALQUER ORDEM (o Tijolo aprende qual é qual).
 #if MONTAGEM_PLACA
