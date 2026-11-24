@@ -1,29 +1,32 @@
 """
-A placa de circuito da frente do Tijolo (KiCad 7, gerada por código).
+A PCB da frente do Tijolo (KiCad 7, gerada por código).
 
     python3 placa/placa.py          (da pasta montagem/)
 
-Sai em saida/placa/: tijolo-frente.kicad_pcb (abre no KiCad), o relatório do
-DRC, os Gerbers e a furação num .zip para a JLCPCB, a lista de peças e as
-imagens das duas faces.
+Sai em saida/placa/: tijolo-pcb.kicad_pcb (abre no KiCad), o relatório do
+teste de regras (DRC), os Gerbers e a furação num .zip para a JLCPCB, a lista
+de peças e as imagens das duas faces.
 
-O que vai na placa (2 camadas):
+O que vai na PCB (2 camadas, 0,8 mm):
   - atrás: as duas barras fêmea de perna longa que encaixam nos pinos da
-    LILYGO (J1 e J2) e os capacitores da tela;
-  - na frente: os 14 pinos da tela (de cabeça para baixo, os pinos embaixo),
-    os 12 contatos do teclado (pentes intercalados, para as pastilhas da
-    borracha do teclado), os botões verde e vermelho (chaves tácteis 6×6) e
-    uma fileira de furos livres para o futuro.
+    LILYGO (J1 e J2) e os capacitores da tela, que ficam pendurados no vão ao
+    lado da LILYGO;
+  - na frente: a tela (soldada pelos pinos dela, os pinos embaixo), os botões
+    verde e vermelho (chaves tácteis 6×6) e, por baixo da aba do teclado, a
+    fileira de 9 furos onde a aba se liga com 7 perninhas de fio.
+Nenhuma solda fica em cima da pilha: o script confere. Os 4 pinos do toque da
+tela, que cairiam ali, são cortados e têm furos sem cobre.
 O roteamento é automático (roteador.py); o GND enche as duas faces.
 """
-import math
+import json
 import os
+import re
 import subprocess
 import sys
 import zipfile
 
 import pcbnew
-from shapely.geometry import Point, Polygon, box
+from shapely.geometry import Point, box
 from shapely.ops import unary_union
 
 AQUI = os.path.dirname(os.path.abspath(__file__))
@@ -32,10 +35,16 @@ import projeto as P  # noqa: E402
 from roteador import FRENTE, TRAS, Grade, SemCaminho  # noqa: E402
 
 SAIDA = os.path.join(os.path.dirname(AQUI), "saida", "placa")
+NOME = "tijolo-pcb"
+VERSAO = "v2 · 2026-11"
 LIB = "/usr/share/kicad/footprints"
-OX, OY = 100.0, 250.0                      # onde a placa fica na folha do KiCad
+OX, OY = 100.0, 200.0                      # onde a placa fica na folha do KiCad
 TRILHA, FOLGA, VIA, VIA_FURO = 0.3, 0.2, 0.6, 0.3
 FOLGA_ZONA = 0.3
+
+# onde a ESP32 tem a antena (embaixo da PCB, a uns 20 mm): ali o GND não enche
+_ax0, _ay0, _ax1, _ay1 = P.caixa_lilygo(*P.L.antena_esp)
+SEM_COBRE = box(_ax0 - 2.0, _ay0 - 2.0, _ax1 + 2.0, _ay1 + 2.0)
 
 
 def mm(v):
@@ -53,38 +62,6 @@ def tj(v):
 
 
 # ---------------------------------------------------------------------------
-# os pentes do teclado
-# ---------------------------------------------------------------------------
-def pente(diametro=6.0, espinha=0.5, dedo=0.35, vao=0.3):
-    """Dois pentes intercalados num círculo: (A, B) em coordenadas locais (mm, Y para cima).
-    A tem a espinha à esquerda; B, à direita. A pastilha de carbono da borracha liga os dois."""
-    r = diametro / 2
-    disco = Point(0, 0).buffer(r, 64)
-    dentro = Point(0, 0).buffer(r - espinha, 64)
-    anel = disco.difference(dentro)
-    anel_a = anel.intersection(box(-r, -r, -vao / 2, r))
-    anel_b = anel.intersection(box(vao / 2, -r, r, r))
-    faixas_a, faixas_b = [], []
-    passo = dedo + vao
-    n = int((2 * (r - espinha) - vao) // passo)
-    y0 = -(n - 1) * passo / 2
-    for k in range(n):
-        y = y0 + k * passo
-        faixa = box(-r, y - dedo / 2, r, y + dedo / 2).intersection(dentro)
-        (faixas_a if k % 2 == 0 else faixas_b).append(faixa)
-    # B primeiro (a espinha da direita e os dedos dela, longe da espinha A);
-    # depois A, longe de tudo de B
-    b = unary_union([anel_b] + [f.difference(anel_a.buffer(vao, 32)) for f in faixas_b])
-    a = unary_union([anel_a] + [f.difference(b.buffer(vao, 32)) for f in faixas_a])
-    a = a.buffer(0.01).buffer(-0.01)
-    b = b.buffer(0.01).buffer(-0.01)
-    if a.geom_type != "Polygon" or b.geom_type != "Polygon":
-        raise ValueError("pente partido")
-    assert a.distance(b) >= vao - 0.03, a.distance(b)
-    return a, b
-
-
-# ---------------------------------------------------------------------------
 # a placa
 # ---------------------------------------------------------------------------
 class Placa:
@@ -93,8 +70,8 @@ class Placa:
         self.nets = {}
         self.pads = {}          # net → [(geometria, camadas)]
         self.obstaculos = []    # (geometria, camadas) sem net
-        self.pecas = []         # (referência, valor, footprint, lado, x, y, rot) para a lista de peças
-        self.furos = []         # (x, y, diâmetro) de todos os furos
+        self.pecas = []         # (referência, o que é, valor, lado, x, y) para a lista de peças
+        self.furos = []         # (x, y, diâmetro, com cobre?) de todos os furos
         self._regras()
         self.contorno = self._contorno()
 
@@ -107,6 +84,7 @@ class Placa:
         ds.m_MinThroughDrill = mm(0.3)
         ds.m_CopperEdgeClearance = mm(0.3)
         ds.m_HoleClearance = mm(0.25)
+        ds.m_MinResolvedSpokes = 1          # todo pad de GND também tem trilha própria
         nc = ds.m_NetSettings.m_DefaultNetClass
         nc.SetClearance(mm(FOLGA))
         nc.SetTrackWidth(mm(TRILHA))
@@ -124,8 +102,11 @@ class Placa:
         return self.nets[nome]
 
     def _contorno(self):
-        x0, y0, x1, y1 = P.PCB_X0, P.PCB_Y0, P.PCB_X1, P.PCB_Y1
-        forma = box(x0, y0, x1, y1).buffer(-1.5).buffer(1.5, 16)
+        corpo = box(P.PCB_X0, P.PCB_Y0, P.PCB_X1, P.PCB_Y1)
+        lingua = box(P.LINGUA[0], P.LINGUA[1], P.LINGUA[2], P.LINGUA[3] + 0.5)
+        forma = unary_union([corpo, lingua])
+        forma = forma.buffer(-1.2).buffer(1.2, 16)          # as quinas de fora
+        forma = forma.buffer(1.0, 16).buffer(-1.0)          # as de dentro (a fresa não faz canto vivo)
         s = pcbnew.PCB_SHAPE(self.b, pcbnew.SHAPE_T_POLY)
         s.SetPolyPoints([kp(x, y) for x, y in list(forma.exterior.coords)[:-1]])
         s.SetLayer(pcbnew.Edge_Cuts)
@@ -134,17 +115,22 @@ class Placa:
         self.b.Add(s)
         return forma
 
-    def texto(self, t, x, y, tam=1.0, camada=pcbnew.F_SilkS, rot=0, negrito=False):
+    def texto(self, t, x, y, tam=1.0, camada=pcbnew.F_SilkS, rot=0, negrito=False, alinha=None):
         tx = pcbnew.PCB_TEXT(self.b)
         tx.SetText(t)
         tx.SetPosition(kp(x, y))
         tx.SetLayer(camada)
         tx.SetTextSize(pcbnew.VECTOR2I(mm(tam), mm(tam)))
-        tx.SetTextThickness(mm(max(0.16, tam * (0.2 if negrito else 0.15))))
+        tx.SetTextThickness(mm(max(0.15, tam * (0.2 if negrito else 0.15))))
         if rot:
             tx.SetTextAngleDegrees(rot)
-        if camada in (pcbnew.B_SilkS, pcbnew.B_Cu):
+        atras = camada in (pcbnew.B_SilkS, pcbnew.B_Cu, pcbnew.B_Fab)
+        if atras:
             tx.SetMirrored(True)
+        if alinha == "esq":
+            tx.SetHorizJustify(pcbnew.GR_TEXT_H_ALIGN_RIGHT if atras else pcbnew.GR_TEXT_H_ALIGN_LEFT)
+        elif alinha == "dir":
+            tx.SetHorizJustify(pcbnew.GR_TEXT_H_ALIGN_LEFT if atras else pcbnew.GR_TEXT_H_ALIGN_RIGHT)
         self.b.Add(tx)
 
     def linha(self, pts, camada=pcbnew.F_SilkS, largura=0.15):
@@ -156,7 +142,18 @@ class Placa:
             s.SetWidth(mm(largura))
             self.b.Add(s)
 
-    # ------------------------------------------------------- pads → router
+    def retangulo(self, x0, y0, x1, y1, camada=pcbnew.F_SilkS, largura=0.15):
+        self.linha([(x0, y0), (x1, y0), (x1, y1), (x0, y1), (x0, y0)], camada, largura)
+
+    def circulo(self, x, y, d, camada=pcbnew.F_SilkS, largura=0.15):
+        s = pcbnew.PCB_SHAPE(self.b, pcbnew.SHAPE_T_CIRCLE)
+        s.SetCenter(kp(x, y))
+        s.SetEnd(kp(x + d / 2, y))
+        s.SetLayer(camada)
+        s.SetWidth(mm(largura))
+        self.b.Add(s)
+
+    # ------------------------------------------------------- pads → roteador
     def _registra_pads(self, fp):
         """as geometrias (Tijolo) dos pads de um footprint, por net"""
         for pad in fp.Pads():
@@ -166,8 +163,6 @@ class Placa:
             if round(rot) % 180 == 90:
                 sx, sy = sy, sx
             forma = pad.GetShape()
-            if forma == pcbnew.PAD_SHAPE_CUSTOM:
-                continue                      # os pentes entram à parte
             if forma == pcbnew.PAD_SHAPE_CIRCLE:
                 g = Point(x, y).buffer(sx / 2, 24)
             elif forma == pcbnew.PAD_SHAPE_OVAL:
@@ -180,23 +175,27 @@ class Placa:
                 camadas.append(FRENTE)
             if pad.IsOnLayer(pcbnew.B_Cu):
                 camadas.append(TRAS)
-            if pad.GetAttribute() in (pcbnew.PAD_ATTRIB_PTH, pcbnew.PAD_ATTRIB_NPTH):
-                self.furos.append((x, y, pcbnew.ToMM(pad.GetDrillSize().x)))
+            furado = pad.GetAttribute() in (pcbnew.PAD_ATTRIB_PTH, pcbnew.PAD_ATTRIB_NPTH)
+            if furado:
+                self.furos.append((x, y, pcbnew.ToMM(pad.GetDrillSize().x),
+                                   pad.GetAttribute() == pcbnew.PAD_ATTRIB_PTH))
             nome = pad.GetNetname()
             if nome:
                 self.pads.setdefault(nome, []).append((g, camadas))
             else:
-                self.obstaculos.append((g, camadas))
+                self.obstaculos.append((g, camadas or [FRENTE, TRAS]))
             if pad.GetAttribute() == pcbnew.PAD_ATTRIB_NPTH:
                 self.obstaculos.append((Point(x, y).buffer(pcbnew.ToMM(pad.GetDrillSize().x) / 2), [FRENTE, TRAS]))
 
-    def footprint_lib(self, lib, nome, ref, valor, x, y, rot=0, atras=False, nets=None):
+    def footprint_lib(self, lib, nome, ref, oque, valor, x, y, rot=0, atras=False, nets=None, lista=True):
         fp = pcbnew.FootprintLoad(os.path.join(LIB, lib + ".pretty"), nome)
         fp.SetReference(ref)
         fp.SetValue(valor)
         fp.SetPosition(kp(x, y))
         if rot:
             fp.SetOrientationDegrees(rot)
+        fp.Reference().SetVisible(False)    # os nomes vão à mão, onde cabem
+        fp.Value().SetVisible(False)
         self.b.Add(fp)                      # antes de virar: o Flip precisa da placa
         if atras:
             fp.Flip(fp.GetPosition(), True)
@@ -207,19 +206,20 @@ class Placa:
                 if n == "GND":
                     pad.SetThermalSpokeAngleDegrees(45)      # entre vizinhos a 2,54: só cabe na diagonal
         self._registra_pads(fp)
-        self.pecas.append((ref, valor, f"{lib}:{nome}", "trás" if atras else "frente", x, y, rot))
+        if lista:
+            self.pecas.append((ref, oque, valor, "trás" if atras else "frente", x, y))
         return fp
 
-    def footprint_novo(self, ref, valor, x, y, atras=False):
+    def footprint_novo(self, ref, valor):
         fp = pcbnew.FOOTPRINT(self.b)
         fp.SetReference(ref)
         fp.SetValue(valor)
-        fp.SetPosition(kp(0, 0) if False else pcbnew.VECTOR2I(0, 0))
+        fp.SetPosition(pcbnew.VECTOR2I(0, 0))
         fp.Reference().SetVisible(False)
         fp.Value().SetVisible(False)
         return fp
 
-    def pad_tht(self, fp, nome, dx, dy, d=1.7, furo=1.0, quadrado=False):
+    def pad_tht(self, fp, nome, x, y, d=1.7, furo=1.0, quadrado=False):
         p = pcbnew.PAD(fp)
         p.SetAttribute(pcbnew.PAD_ATTRIB_PTH)
         p.SetShape(pcbnew.PAD_SHAPE_RECT if quadrado else pcbnew.PAD_SHAPE_CIRCLE)
@@ -227,189 +227,215 @@ class Placa:
         p.SetDrillSize(pcbnew.VECTOR2I(mm(furo), mm(furo)))
         p.SetLayerSet(pcbnew.PAD.PTHMask())
         p.SetName(nome)
-        v = pcbnew.VECTOR2I(mm(dx), mm(-dy))
+        v = pcbnew.VECTOR2I(mm(x), mm(-y))
         p.SetPos0(v)
         p.SetPosition(v)
         fp.Add(p)
         return p
 
-    def pad_custom(self, fp, nome, poligono, ancora):
-        """pad SMD de cobre com a forma do polígono (coordenadas locais, Y para cima), sem pasta"""
+    def furo_simples(self, fp, x, y, furo=1.1):
+        """um furo sem cobre (não leva solda)"""
         p = pcbnew.PAD(fp)
-        p.SetAttribute(pcbnew.PAD_ATTRIB_SMD)
-        p.SetShape(pcbnew.PAD_SHAPE_CUSTOM)
-        p.SetAnchorPadShape(pcbnew.PAD_SHAPE_CIRCLE)
-        p.SetSize(pcbnew.VECTOR2I(mm(0.3), mm(0.3)))
-        ls = pcbnew.LSET()
-        ls.AddLayer(pcbnew.F_Cu)
-        ls.AddLayer(pcbnew.F_Mask)
-        p.SetLayerSet(ls)
-        ax, ay = ancora
-        pts = [pcbnew.VECTOR2I(mm(x - ax), mm(-(y - ay))) for x, y in list(poligono.exterior.coords)[:-1]]
-        p.AddPrimitivePoly(pcbnew.VECTOR_VECTOR2I(pts), 0, True)
-        p.SetName(nome)
-        v = pcbnew.VECTOR2I(mm(ax), mm(-ay))
+        p.SetAttribute(pcbnew.PAD_ATTRIB_NPTH)
+        p.SetShape(pcbnew.PAD_SHAPE_CIRCLE)
+        p.SetSize(pcbnew.VECTOR2I(mm(furo), mm(furo)))
+        p.SetDrillSize(pcbnew.VECTOR2I(mm(furo), mm(furo)))
+        p.SetLayerSet(pcbnew.PAD.UnplatedHoleMask())
+        p.SetName("")
+        v = pcbnew.VECTOR2I(mm(x), mm(-y))
         p.SetPos0(v)
         p.SetPosition(v)
         fp.Add(p)
         return p
 
-    def coloca(self, fp, x, y, nets=None):
-        fp.SetPosition(kp(x, y))
+    def coloca(self, fp, nets=None):
+        """um footprint feito aqui, com os pads já nas coordenadas do Tijolo"""
+        fp.SetPosition(kp(0, 0))
         self.b.Add(fp)
         for pad in fp.Pads():
             n = (nets or {}).get(pad.GetName())
             if n:
                 pad.SetNet(self.net(n))
+                if n == "GND":
+                    pad.SetThermalSpokeAngleDegrees(45)
         self._registra_pads(fp)
+
+    def pad_em(self, fp, nome):
+        for pad in fp.Pads():
+            if pad.GetName() == nome:
+                return tj(pad.GetPosition())
+        raise KeyError(nome)
 
 
 def montar():
     pl = Placa()
+    F, B = pcbnew.F_SilkS, pcbnew.B_SilkS
 
-    # --- as barras fêmea (atrás), nos pinos da LILYGO
+    # --- as barras fêmea (atrás), nos pinos da LILYGO. O pino 1 fica embaixo.
+    usados = set(P.TELA_GPIO.values()) | {n for n in P.TECLADO_ABA if n} | {P.GPIO_VERDE, P.GPIO_VERMELHO}
     for barra, lista in (("J1", P.J1), ("J2", P.J2)):
         x, y = P.pino_barra(barra, 1)
-        nets = {}
-        for i, nome in enumerate(lista):
-            if nome in ("3V3", "GND") or nome in P.TELA_GPIO.values() or nome in (
-                    P.GPIO_FILEIRA + P.GPIO_COLUNA + [P.GPIO_VERDE, P.GPIO_VERMELHO]):
-                nets[str(i + 1)] = nome
-            elif nome in ("IO2", "IO3", "IO48", "VBAT"):
-                nets[str(i + 1)] = nome                      # vão para os furos livres
-        pl.footprint_lib("Connector_PinSocket_2.54mm", "PinSocket_1x16_P2.54mm_Vertical", barra,
-                         "barra fêmea 1×16, perna longa", x, y, atras=True, nets=nets)
-        # os nomes dos pinos, atrás e na frente
+        nets = {str(i + 1): nome for i, nome in enumerate(lista) if nome in usados}
+        fp = pl.footprint_lib("Connector_PinSocket_2.54mm", "PinSocket_1x16_P2.54mm_Vertical", barra,
+                              "barra fêmea 1×16 de perna longa (empilhável), 2,54 mm",
+                              f"perna de {P.FEMEA_PERNA_MIN:.1f} mm ou mais", x, y, rot=180, atras=True, nets=nets)
+        for item in list(fp.GraphicalItems()):
+            if item.GetLayer() in (pcbnew.F_SilkS, pcbnew.B_SilkS):
+                fp.Remove(item)
+        for n in (1, 16):                                   # confere: os furos caem nos pinos da LILYGO
+            px, py = pl.pad_em(fp, str(n))
+            ex, ey = P.pino_barra(barra, n)
+            assert abs(px - ex) < 0.01 and abs(py - ey) < 0.01, (barra, n, px, py, ex, ey)
+        lado = -1 if barra == "J2" else 1                   # os nomes dos pinos, para dentro da placa
         for i, nome in enumerate(lista):
             px, py = P.pino_barra(barra, i + 1)
-            lado = -1 if barra == "J2" else 1
-            pl.texto(nome, px + lado * 3.0, py, tam=0.8, camada=pcbnew.B_SilkS)
+            pl.texto(nome, px + lado * 1.6, py, tam=0.8, camada=B, alinha="esq" if lado > 0 else "dir")
+        _, ytopo = P.pino_barra(barra, 16)
+        pl.texto(barra, x, ytopo + 2.4, tam=1.0, camada=B, negrito=True)
+        pl.texto(barra, x + lado * 2.6, ytopo + 0.4, tam=1.0, camada=F, negrito=True)
+        y0 = P.pino_barra(barra, 1)[1]
+        for camada in (F, B):
+            pl.retangulo(x - 1.1, y0 - 1.25, x + 1.1, ytopo + 1.25, camada, 0.12)
 
-    # --- a tela: 14 pinos, a tela de cabeça para baixo
-    fp = pl.footprint_novo("TELA", "tela ILI9341 2,4\" (pinos soldados por cima)", 0, 0)
+    # --- a tela: os pinos dela entram por cima e são soldados atrás
+    fp = pl.footprint_novo("TELA", "tela ILI9341 2,4\"")
     nets = {}
     for i in range(1, 15):
         x, y = P.pino_tela(i)
+        if i in P.TELA_PINOS_CORTADOS:
+            # Esses pinos ficam em cima da pilha: são cortados rente ao plástico da barra antes de
+            # encaixar a tela. O furo é sem cobre (não leva solda) e só esconde o toquinho que sobra.
+            pl.furo_simples(fp, x, y, furo=1.1)
+            continue
         pl.pad_tht(fp, str(i), x, y, d=1.7, furo=1.0, quadrado=(i == 1))
         nome = P.TELA_PINOS[i - 1]
         if nome in P.TELA_GPIO:
             nets[str(i)] = P.TELA_GPIO[nome]
-    pl.coloca(fp, 0, 0, nets)
+    pl.coloca(fp, nets)
+    pl.pecas.append(("TELA", "tela 2,4\" ILI9341 (a sua), soldada pelos pinos", "-", "frente", *P.pino_tela(1)))
+    curtos = {"SDI(MOSI)": "SDI", "SDO(MISO)": "SDO", "RESET": "RST", "T_IRQ": "IRQ"}
+    x1, y1 = P.pino_tela(1)
+    pl.texto("1", x1 - 1.7, y1, tam=0.9, negrito=True)
     for i in range(1, 15):
         x, y = P.pino_tela(i)
-        nome = P.TELA_PINOS[i - 1].replace("SDI(MOSI)", "MOSI").replace("SDO(MISO)", "MISO")
-        pl.texto(nome, x, y - 2.1, tam=0.8, rot=90)
-    # o contorno da tela e do vidro (só desenho)
-    tx0, tx1 = P.TELA_X, P.TELA_X + P.T.largura
-    pl.linha([(tx0, P.TELA_BASE), (tx1, P.TELA_BASE)], pcbnew.F_Fab)
-    pl.linha([(tx0, P.TELA_BASE), (tx0, P.PCB_Y1)], pcbnew.F_Fab)
-    pl.linha([(tx1, P.TELA_BASE), (tx1, P.PCB_Y1)], pcbnew.F_Fab)
-    pl.texto("TELA (de cabeça para baixo: os pinos embaixo)", P.TELA_CX, P.TELA_BASE + 12, tam=1.0)
+        nome = curtos.get(P.TELA_PINOS[i - 1], P.TELA_PINOS[i - 1])
+        if i in P.TELA_PINOS_CORTADOS:
+            for camada in (F, B):                           # um X em volta do furo, nas duas faces
+                for sx, sy in ((1, 1), (1, -1), (-1, 1), (-1, -1)):
+                    pl.linha([(x + sx * 0.62, y + sy * 0.62), (x + sx * 0.9, y + sy * 0.9)], camada, 0.15)
+        else:
+            pl.texto(nome, x, y + 1.45, tam=0.8)
+    xa, _ = P.pino_tela(P.TELA_PINOS_CORTADOS[0])
+    xb, _ = P.pino_tela(P.TELA_PINOS_CORTADOS[-1])
+    pl.texto("CORTE ESTES 4", (xa + xb) / 2, y1 + 1.45, tam=0.8)
+    pl.texto("SEM SOLDA NESTES 4", (xa + xb) / 2, y1 + 1.75, tam=0.8, camada=B)
+    # o contorno da tela (só desenho)
+    pl.retangulo(P.TELA_X, P.TELA_Y0, P.TELA_X + P.T.largura, P.PCB_Y1 + 3.0, pcbnew.F_Fab, 0.1)
 
-    # --- os capacitores da tela, atrás, perto do VCC (fora da pilha)
-    xv, yv = P.pino_tela(1)
-    xg, _ = P.pino_tela(2)
-    lado = 1 if xv > P.TELA_CX else -1
-    cx = xv + lado * 1.0
-    caps = [("C1", "100 nF", "C_0805_2012Metric", 0.0), ("C2", "22 µF", "C_1206_3216Metric", 3.2),
-            ("C3", "22 µF", "C_1206_3216Metric", 6.6), ("C4", "100 pF", "C_0805_2012Metric", 10.0)]
-    for ref, val, nome, dy in caps:
-        pl.footprint_lib("Capacitor_SMD", nome, ref, val, cx, yv + 3.0 + dy, rot=0, atras=True,
-                         nets={"1": "3V3", "2": "GND"} if lado < 0 else {"1": "GND", "2": "3V3"})
-    # 100 nF no RESET da tela (pino 4)
-    xr, _ = P.pino_tela(4)
-    pl.footprint_lib("Capacitor_SMD", "C_0805_2012Metric", "C5", "100 nF", xr, yv + 3.0, rot=0, atras=True,
-                     nets={"1": "IO9", "2": "GND"} if lado > 0 else {"1": "GND", "2": "IO9"})
+    # --- os botões verde e vermelho (chaves tácteis 6×6): GND em cima, o pino da ESP32 embaixo
+    for ref, cor, x, gpio in (("SW1", "VERDE", P.BOTOES_X[0], P.GPIO_VERDE), ("SW2", "VERMELHO", P.BOTOES_X[1],
+                                                                                 P.GPIO_VERMELHO)):
+        fp = pl.footprint_lib("Button_Switch_THT", "SW_PUSH_6mm", ref, f"chave táctil 6×6 mm, 4 pernas ({cor.lower()})",
+                              "5 mm de altura", x - 3.25, P.BOTOES_Y + 2.25, nets={"1": "GND", "2": gpio})
+        for item in list(fp.GraphicalItems()):
+            if item.GetLayer() == pcbnew.F_SilkS:
+                fp.Remove(item)
+        pl.retangulo(x - 2.1, P.BOTOES_Y - 3.4, x + 2.1, P.BOTOES_Y + 3.4, F, 0.12)
+        pl.texto(cor, x, P.BOTOES_Y, tam=0.8, rot=90)
 
-    # --- os botões verde e vermelho
-    for ref, x, gpio, rot in (("SW_VERDE", P.TECLAS_X[0], P.GPIO_VERDE, 0), ("SW_VERMELHO", P.TECLAS_X[2],
-                                                                                 P.GPIO_VERMELHO, 0)):
-        # o footprint tem o pino 1 em (0, 0) e o centro do corpo em (3,25; 2,25) (Y do KiCad para baixo)
-        pl.footprint_lib("Button_Switch_THT", "SW_PUSH_6mm", ref, "chave táctil 6×6", x - 3.25, P.BOTOES_Y + 2.25,
-                         nets={"1": "GND", "2": gpio})
-    pl.texto("VERDE", P.TECLAS_X[0], P.BOTOES_Y + 4.3, tam=0.8)
-    pl.texto("VERMELHO", P.TECLAS_X[2], P.BOTOES_Y + 4.3, tam=0.8)
+    # --- a aba do teclado: 9 furos; os 7 do meio vão para a ESP32
+    fp = pl.footprint_novo("TECLADO", "teclado 3×4 (a aba)")
+    nets = {}
+    for k in range(1, P.K.furos_aba + 1):
+        x, y = P.furo_aba(k)
+        pl.pad_tht(fp, str(k), x, y, d=1.8, furo=1.1)
+        if P.TECLADO_ABA[k - 1]:
+            nets[str(k)] = P.TECLADO_ABA[k - 1]
+    pl.coloca(fp, nets)
+    pl.pecas.append(("TECLADO", "teclado 3×4 (o seu), colado com fita de espuma; a aba ligada por 7 perninhas de fio",
+                     "-", "frente", *P.furo_aba(5)))
+    xa, ya = P.furo_aba(1)
+    xb, _ = P.furo_aba(P.K.furos_aba)
+    pl.texto("ABA DO TECLADO", P.MEIO_X, ya + 1.75, tam=0.8)
+    # o contorno do teclado (só desenho) e onde vai a fita de espuma (na serigrafia)
+    pl.retangulo(P.TECLADO_X0, P.TECLADO_Y0, P.TECLADO_X0 + P.K.largura, P.TECLADO_Y1, pcbnew.F_Fab, 0.1)
+    for fx0, fx1 in FITAS:
+        pl.retangulo(fx0, FITA_Y[0], fx1, FITA_Y[1], F, 0.12)
+        pl.texto("FITA DE ESPUMA", (fx0 + fx1) / 2, (FITA_Y[0] + FITA_Y[1]) / 2, tam=0.9, rot=90)
+    # a borda de cima do teclado, na serigrafia: é por ela que se acerta o teclado na hora de colar
+    # (dos lados ele fica rente às bordas da PCB)
+    yb = P.TECLADO_Y1 + 0.25
+    for bx0, bx1 in ((2.0, 10.6), (24.0, 48.0)):
+        pl.linha([(bx0, yb), (bx1, yb)], F, 0.2)
+    pl.texto("BORDA DE CIMA DO TECLADO", 36.0, yb + 1.0, tam=0.8)
 
-    # --- o teclado: 12 pentes e a matriz já ligada
-    # Cada tecla tem dois pentes intercalados: A (a fileira, espinha à esquerda, com um terminal
-    # para fora à esquerda) e B (a coluna, espinha à direita, com uma via logo à direita).
-    # As fileiras correm na frente, por cima dos contatos; as colunas, atrás, de via em via.
-    a, bb = pente(P.K.contato)
-    r_ = P.K.contato / 2
-    pl.pentes = []
-    pl.pre = {}              # net → [(camada, [(x, y), ...]) ...], vias em pl.pre_vias
-    pl.pre_vias = {}
-    for r, linha in enumerate(P.TECLAS):
-        for c, rot in enumerate(linha):
-            x, y = P.TECLAS_X[c], P.TECLAS_Y[r]
-            fp = pl.footprint_novo(f"K{rot}", f"tecla {rot}", 0, 0)
-            ga = Polygon([(px + x, py + y) for px, py in a.exterior.coords])
-            ga = ga.union(box(x - r_ - 1.0, y - 0.45, x - r_ + 0.3, y + 0.45))     # o terminal da fileira
-            gb = Polygon([(px + x, py + y) for px, py in bb.exterior.coords])
-            gb = gb.union(box(x + r_ - 0.3, y - 0.45, x + r_ + 0.5, y + 0.45))     # o terminal da coluna
-            pl.pad_custom(fp, "1", ga, (x - r_ - 0.6, y))
-            pl.pad_custom(fp, "2", gb, (x + r_ + 0.2, y))
-            fp.SetPosition(pcbnew.VECTOR2I(0, 0))
-            pl.b.Add(fp)
-            fila, col = P.GPIO_FILEIRA[r], P.GPIO_COLUNA[c]
-            for pad in fp.Pads():
-                pad.SetNet(pl.net(fila if pad.GetName() == "1" else col))
-            fp.SetPosition(kp(0, 0))
-            pl.pads.setdefault(fila, []).append((ga, [FRENTE]))
-            pl.pads.setdefault(col, []).append((gb, [FRENTE]))
-            pl.texto(rot, x, y + P.K.tecla[1] / 2 + 0.2, tam=0.9)
-            pl.pentes.append((rot, x, y))
-            tx, ty = P.K.tecla
-            pl.linha([(x - tx / 2, y - ty / 2), (x + tx / 2, y - ty / 2), (x + tx / 2, y + ty / 2),
-                      (x - tx / 2, y + ty / 2), (x - tx / 2, y - ty / 2)], pcbnew.F_Fab, 0.1)
-            # a via da coluna, à direita do pente, e o toco até ela
-            vx = x + r_ + 1.3
-            pl.pre.setdefault(col, []).append((FRENTE, [(x + r_ + 0.2, y), (vx, y)]))
-            pl.pre_vias.setdefault(col, []).append((vx, y))
-    dy = r_ + 1.4
-    for r in range(4):
-        y = P.TECLAS_Y[r]
-        fila = P.GPIO_FILEIRA[r]
-        for c in range(2):
-            xa = P.TECLAS_X[c] - r_ - 0.7
-            xb = P.TECLAS_X[c + 1] - r_ - 0.7
-            pl.pre.setdefault(fila, []).append((FRENTE, [(xa, y), (xa, y + dy), (xb, y + dy), (xb, y)]))
-    for c in range(3):
-        col = P.GPIO_COLUNA[c]
-        vx = P.TECLAS_X[c] + r_ + 1.3
-        pl.pre.setdefault(col, []).append((TRAS, [(vx, P.TECLAS_Y[3]), (vx, P.TECLAS_Y[0])]))
-    # o que já está ligado vira um grupo só para o roteador
-    pl.grupos = {}
-    for net in list(P.GPIO_FILEIRA) + list(P.GPIO_COLUNA):
-        juntos = [(gm, cm) for gm, cm in pl.pads[net] if gm.geom_type == "Polygon" and gm.area > 5]
-        resto = [(gm, cm) for gm, cm in pl.pads[net] if not (gm.geom_type == "Polygon" and gm.area > 5)]
-        pl.grupos[net] = [juntos] + [[pr] for pr in resto]
-
-    # --- os furos livres (para o futuro): 3V3, GND, IO2, IO3, IO48, VBAT
-    livres = ["3V3", "GND", "IO2", "IO3", "IO48", "VBAT"]
-    fp = pl.footprint_novo("EXTRA", "furos livres", 0, 0)
-    ex, ey = P.PCB_X1 - 2.2, P.LILYGO_Y + 30.0
-    for i, n in enumerate(livres):
-        pl.pad_tht(fp, str(i + 1), ex, ey + i * 2.54, d=1.6, furo=0.9, quadrado=(i == 0))
-    pl.coloca(fp, 0, 0, {str(i + 1): n for i, n in enumerate(livres)})
-    for i, n in enumerate(livres):
-        pl.texto(n, ex - 2.8, ey + i * 2.54, tam=0.8)
+    # --- os capacitores da tela: atrás, pendurados no vão ao lado da LILYGO.
+    # Cada um tem dois furos a 2,5 mm (cabe um cerâmico de disco, ou um 0805 soldado entre as ilhas).
+    for ref, oque, valor, (cx, cy), lib_nome, pinos in CAPACITORES:
+        fp = pl.footprint_lib("Capacitor_THT", lib_nome, ref, oque, valor, cx, cy, atras=True, nets=pinos)
+        x2, y2 = pl.pad_em(fp, "2")
+        passo = 2.5 if "P2.50" in lib_nome else 5.0
+        assert abs(x2 - (cx - passo)) < 0.01 and abs(y2 - cy) < 0.01, (ref, x2, y2)
+        curto = valor.replace(" nF", "n").replace(" pF", "p").replace(" µF", "µ")
+        if passo == 5.0:
+            for item in list(fp.GraphicalItems()):
+                if item.GetLayer() == B:
+                    fp.Remove(item)
+            for camada in (F, B):
+                pl.texto(curto, cx - passo / 2, cy, tam=0.8, camada=camada)
+        else:                                               # o eletrolítico: o valor embaixo do círculo
+            for camada in (F, B):
+                pl.texto(f"{ref} {curto}", cx - passo / 2, cy - 4.1, tam=0.8, camada=camada)
+            pl.texto("+", cx, cy + 1.6, tam=1.0, camada=F, negrito=True)
+            pl.circulo(cx - passo / 2, cy, 6.5, F, 0.12)
 
     # --- textos
-    pl.texto("TIJOLO", P.TELA_CX, P.TELA_BASE + 30, tam=3.0, negrito=True)
-    pl.texto("placa da frente · v1 · 2026-10", P.TELA_CX, P.TELA_BASE + 25.5, tam=1.0)
-    pl.texto("LILYGO DE COSTAS: J1/J2 nos pinos do lado da pilha", P.TELA_CX, P.TELA_BASE + 50,
-             tam=1.0, camada=pcbnew.B_SilkS)
-    pl.texto("J2", P.pino_barra("J2", 1)[0], P.pino_barra("J2", 1)[1] + 2.3, tam=1.0, camada=pcbnew.B_SilkS)
-    pl.texto("J1", P.pino_barra("J1", 1)[0], P.pino_barra("J1", 1)[1] + 2.3, tam=1.0, camada=pcbnew.B_SilkS)
+    pl.texto("TIJOLO", 33.0, 15.0, tam=3.0, negrito=True)
+    pl.texto(f"PCB da frente · {VERSAO}", 33.0, 11.4, tam=0.9)
+    pl.texto("TELA: PINOS PARA BAIXO", 33.5, P.BOTOES_Y + 1.7, tam=0.8)
+    pl.texto("corte as pernas rente", 33.5, P.BOTOES_Y + 0.4, tam=0.8)
+    pl.texto("ESTA FACE PARA A PILHA", 34.0, 20.0, tam=1.0, camada=B, negrito=True)
+    pl.texto(f"TIJOLO · PCB da frente · {VERSAO}", 34.0, 17.6, tam=0.9, camada=B)
+    pl.texto("barras fêmea deste lado; solde na outra face", 34.0, 15.6, tam=0.8, camada=B)
     return pl
+
+
+# onde vai a fita dupla face de espuma, entre as fileiras de solda das barras
+FITAS = [(3.0, 17.5), (23.5, 47.5)]
+FITA_Y = (27.0, 66.0)
+# (referência, o que é, valor, (x, y) do furo 1, footprint, {pino: net}). As peças ficam atrás, então o
+# furo 2 cai à ESQUERDA do 1 (de frente): 2,5 mm no eletrolítico (o furo 1 é o +), 5 mm nos cerâmicos.
+_yc = P.TELA_PINOS_Y - 2.2
+CAPACITORES = [
+    ("C2", "capacitor eletrolítico 100 µF, 10 V ou mais (Ø até 6,3 mm)", "100 µF", (15.85, P.BOTOES_Y - 2.1),
+     "CP_Radial_D6.3mm_P2.50mm", {"1": "3V3", "2": "GND"}),
+    ("C1", "capacitor cerâmico 100 nF", "100 nF", (17.3, _yc), "C_Disc_D5.0mm_W2.5mm_P5.00mm",
+     {"1": "3V3", "2": "GND"}),
+    ("C4", "capacitor cerâmico 100 pF", "100 pF", (24.9, _yc), "C_Disc_D5.0mm_W2.5mm_P5.00mm",
+     {"1": "3V3", "2": "GND"}),
+    ("C5", "capacitor cerâmico 100 nF (no RESET da tela)", "100 nF", (24.5, P.BOTOES_Y - 0.3),
+     "C_Disc_D5.0mm_W2.5mm_P5.00mm", {"1": "IO9", "2": "GND"}),
+]
+
+
+def conferir_pilha(pl):
+    """nenhum furo com solda pode ficar em cima da pilha sem sobrar espaço"""
+    ruins = []
+    for x, y, d, cobre in pl.furos:
+        if not cobre:
+            continue
+        f = P.folga_sobre_a_pilha(x, y)
+        if f is not None and f < P.SOLDA_ATRAS + P.FOLGA_SOLDA_PILHA:
+            ruins.append(f"furo em ({x:.2f}, {y:.2f}): só {f:.2f} mm até a pilha")
+    return ruins
 
 
 # ---------------------------------------------------------------------------
 # roteamento
 # ---------------------------------------------------------------------------
-ORDEM = ["IO16", "IO37", "IO17", "IO15", "IO38", "IO39", "IO40", "IO21", "IO35",
-         "IO47", "IO9", "IO14", "IO36", "IO11", "IO12", "IO13", "IO2", "IO3", "IO48", "VBAT", "3V3", "GND"]
+ORDEM = ["IO37", "IO15", "IO17", "IO40", "IO16", "IO39", "IO38",            # o teclado (os mais compridos)
+         "IO47", "IO9", "IO14", "IO36", "IO11", "IO12", "IO13",             # a tela
+         "IO35", "IO21", "3V3", "GND"]
 
 
 def rotear_com_tentativas(pl, tentativas=12):
@@ -436,25 +462,22 @@ def rotear(pl, ordem=ORDEM):
             g.cobre(geom, ids[net], camadas)
     for geom, camadas in pl.obstaculos:
         g.proibe(geom, camadas)
-    for x, y, d in pl.furos:
+    for x, y, d, _ in pl.furos:
         g.sem_via(Point(x, y).buffer(d / 2 + 0.25 + VIA_FURO / 2 + 0.15, 16))
     # ao lado das barras, andar custa mais: as trilhas saem delas logo, sem emparedar os vizinhos
     for barra in ("J1", "J2"):
-        bx, by1 = P.pino_barra(barra, 1)
-        _, by0 = P.pino_barra(barra, 16)
+        bx, by0 = P.pino_barra(barra, 1)
+        _, by1 = P.pino_barra(barra, 16)
         g.evita(box(bx - 2.6, by0 - 1.5, bx + 2.6, by1 + 1.5), (FRENTE, TRAS), 3.0)
+    # em cima da antena da ESP32, também: as trilhas dão a volta se der
+    g.evita(SEM_COBRE, (FRENTE, TRAS), 1.5)
     rotas = {}
-    # o que já vem roteado (a matriz do teclado)
-    for net, trechos in pl.pre.items():
-        vias = pl.pre_vias.get(net, [])
-        g.marca_rota(ids[net], trechos, vias)
-        rotas.setdefault(net, []).append((trechos, vias))
     falhas = []
     for net in list(ordem) + [n for n in pl.pads if n not in ordem]:
         if net not in pl.pads:
             continue
         nid = ids[net]
-        grupos = pl.grupos.get(net) or [[pr] for pr in pl.pads[net]]
+        grupos = [[pr] for pr in pl.pads[net]]
         if len(grupos) < 2:
             continue
 
@@ -465,13 +488,6 @@ def rotear(pl, ordem=ORDEM):
             return out
 
         arvore = celulas(grupos[0])
-        if net in pl.pre:                    # as trilhas prontas também valem de origem
-            for c, pts in pl.pre[net]:
-                for (xa, ya), (xb, yb) in zip(pts, pts[1:]):
-                    n = max(1, int(math.hypot(xb - xa, yb - ya) / 0.2))
-                    for t in range(n + 1):
-                        j, i = g.celula(xa + (xb - xa) * t / n, ya + (yb - ya) * t / n)
-                        arvore.add((c, j, i))
         faltam = list(range(1, len(grupos)))
         c0 = unary_union([gm for gm, _ in grupos[0]]).centroid
         while faltam:
@@ -497,9 +513,10 @@ def rotear(pl, ordem=ORDEM):
         x = x0 + 2.5
         while x < x1 - 2:
             j, i = g.celula(x, y)
-            folga_ok = all(g.dono_via[cm][jj, ii] in (0, gid) for cm in (0, 1)
-                           for jj in range(j - 3, j + 4) for ii in range(i - 3, i + 4)
-                           if 0 <= jj < g.ny and 0 <= ii < g.nx)
+            dentro = pl.contorno.buffer(-1.0).contains(Point(x, y)) and not SEM_COBRE.buffer(0.8).contains(Point(x, y))
+            folga_ok = dentro and all(g.dono_via[cm][jj, ii] in (0, gid) for cm in (0, 1)
+                                      for jj in range(j - 3, j + 4) for ii in range(i - 3, i + 4)
+                                      if 0 <= jj < g.ny and 0 <= ii < g.nx)
             if folga_ok:
                 costura.append(g.ponto(j, i))
                 g.marca_rota(gid, [], [g.ponto(j, i)])
@@ -533,28 +550,17 @@ def aplicar_rotas(pl, rotas):
                 pl.b.Add(v)
 
 
-def _via(b, pos, net):
-    v = pcbnew.PCB_VIA(b)
-    v.SetPosition(pos)
-    v.SetWidth(mm(VIA))
-    v.SetDrill(mm(VIA_FURO))
-    v.SetViaType(pcbnew.VIATYPE_THROUGH)
-    v.SetLayerPair(pcbnew.F_Cu, pcbnew.B_Cu)
-    v.SetNet(net)
-    b.Add(v)
-
-
 def zonas_gnd(b, contorno):
     """o GND enchendo as duas faces (a placa precisa ter sido carregada do disco: o ZONE_FILLER
-    de uma placa feita só na memória derruba o KiCad 7)"""
+    de uma placa feita só na memória derruba o KiCad 7), menos em cima da antena da ESP32"""
     gnd = b.FindNet("GND")
+    x0, y0, x1, y1 = contorno.bounds
     for camada in (pcbnew.F_Cu, pcbnew.B_Cu):
         z = pcbnew.ZONE(b)
         z.SetLayer(camada)
         z.SetNet(gnd)
         ol = z.Outline()
         ol.NewOutline()
-        x0, y0, x1, y1 = contorno.bounds
         for x, y in ((x0, y0), (x1, y0), (x1, y1), (x0, y1)):
             ol.Append(mm(x + OX), mm(OY - y))
         z.SetPadConnection(pcbnew.ZONE_CONNECTION_THERMAL)
@@ -564,29 +570,26 @@ def zonas_gnd(b, contorno):
         z.SetThermalReliefSpokeWidth(mm(0.4))
         z.SetIslandRemovalMode(pcbnew.ISLAND_REMOVAL_MODE_ALWAYS)
         b.Add(z)
+    # a área sem cobre (só o enchimento: trilhas podem passar)
+    k = pcbnew.ZONE(b)
+    k.SetIsRuleArea(True)
+    k.SetDoNotAllowCopperPour(True)
+    k.SetDoNotAllowTracks(False)
+    k.SetDoNotAllowVias(False)
+    k.SetDoNotAllowPads(False)
+    k.SetDoNotAllowFootprints(False)
+    ls = pcbnew.LSET()
+    ls.AddLayer(pcbnew.F_Cu)
+    ls.AddLayer(pcbnew.B_Cu)
+    k.SetLayerSet(ls)
+    ol = k.Outline()
+    ol.NewOutline()
+    ax0, ay0, ax1, ay1 = SEM_COBRE.bounds
+    for x, y in ((ax0, ay0), (ax1, ay0), (ax1, ay1), (ax0, ay1)):
+        ol.Append(mm(x + OX), mm(OY - y))
+    b.Add(k)
     b.BuildConnectivity()
     pcbnew.ZONE_FILLER(b).Fill(b.Zones())
-
-
-def costura(b, contorno, passo=5.0):
-    """vias de GND ligando as duas faces, onde as duas zonas têm cobre"""
-    gnd = b.FindNet("GND")
-    zonas = {z.GetLayer(): z for z in b.Zones()}
-    n = 0
-    x0, y0, x1, y1 = contorno.bounds
-    y = y0 + 2.5
-    while y < y1 - 2:
-        x = x0 + 2.5
-        while x < x1 - 2:
-            pos = kp(x, y)
-            if all(zonas[c].HitTestFilledArea(c, pos, -mm(VIA / 2 + 0.3)) for c in (pcbnew.F_Cu, pcbnew.B_Cu)):
-                _via(b, pos, gnd)
-                n += 1
-            x += passo
-        y += passo
-    b.BuildConnectivity()
-    pcbnew.ZONE_FILLER(b).Fill(b.Zones())
-    return n
 
 
 # ---------------------------------------------------------------------------
@@ -597,7 +600,6 @@ def salvar(b, arq):
     pcbnew.SaveBoard(arq, b)
     # as regras que o KiCad guarda no projeto: aceita térmico de 1 raio (os pinos das barras são
     # vizinhos demais para 2) e não reclama das bibliotecas (os footprints vêm do código)
-    import json
     pro = arq[:-len(".kicad_pcb")] + ".kicad_pro"
     with open(pro, encoding="utf-8") as f:
         d = json.load(f)
@@ -611,10 +613,11 @@ def salvar(b, arq):
         json.dump(d, f, indent=2)
 
 
-def exportar(arq, nome="tijolo-frente"):
-    b = pcbnew.LoadBoard(arq)
+def exportar(arq, nome=NOME):
     drc = os.path.join(SAIDA, "drc.txt")
-    pcbnew.WriteDRCReport(b, drc, pcbnew.EDA_UNITS_MILLIMETRES, True)
+    codigo = ("import pcbnew, sys; b = pcbnew.LoadBoard(sys.argv[1]); "
+              "pcbnew.WriteDRCReport(b, sys.argv[2], pcbnew.EDA_UNITS_MILLIMETRES, True)")
+    subprocess.run([sys.executable, "-c", codigo, arq, drc], check=True, capture_output=True)
     gerb = os.path.join(SAIDA, "gerbers")
     os.makedirs(gerb, exist_ok=True)
     for f in os.listdir(gerb):
@@ -636,20 +639,25 @@ def exportar(arq, nome="tijolo-frente"):
         if lado == "tras":
             args.append("--mirror")
         subprocess.run(args + [arq], check=True, capture_output=True)
+    for lado, camadas_svg in (("frente-letras", "F.SilkS,Edge.Cuts,F.Mask"), ("tras-letras", "B.SilkS,Edge.Cuts,B.Mask")):
+        args = ["kicad-cli", "pcb", "export", "svg", "-o", os.path.join(SAIDA, f"{nome}-{lado}.svg"),
+                "--layers", camadas_svg, "--exclude-drawing-sheet", "--page-size-mode", "2"]
+        if lado.startswith("tras"):
+            args.append("--mirror")
+        subprocess.run(args + [arq], check=True, capture_output=True)
     return drc, zipf
 
 
 def lista_de_pecas(pl):
-    linhas = ["referência;valor;footprint;lado;x;y"]
-    for ref, val, fp, lado, x, y, rot in pl.pecas:
-        linhas.append(f"{ref};{val};{fp};{lado};{x:.2f};{y:.2f}")
+    linhas = ["referência;o que é;valor;lado;x;y"]
+    for ref, oque, val, lado, x, y in pl.pecas:
+        linhas.append(f"{ref};{oque};{val};{lado};{x:.2f};{y:.2f}")
     with open(os.path.join(SAIDA, "pecas.csv"), "w", encoding="utf-8") as f:
         f.write("\n".join(linhas) + "\n")
 
 
 def resumo_drc(drc):
     """(erros, avisos, sem ligação, texto dos erros): ignora os avisos de biblioteca e de serigrafia"""
-    import re
     with open(drc, encoding="utf-8") as f:
         texto = f.read()
     erros, avisos = [], []
@@ -668,8 +676,12 @@ def resumo_drc(drc):
 
 if __name__ == "__main__":
     os.makedirs(SAIDA, exist_ok=True)
-    arq = os.path.join(SAIDA, "tijolo-frente.kicad_pcb")
+    arq = os.path.join(SAIDA, NOME + ".kicad_pcb")
     pl = montar()
+    ruins = conferir_pilha(pl)
+    print("soldas em cima da pilha:", ruins or "nenhuma")
+    if ruins:
+        sys.exit(1)
     rotas, falhas = rotear_com_tentativas(pl)
     aplicar_rotas(pl, rotas)
     salvar(pl.b, arq)
@@ -680,9 +692,13 @@ if __name__ == "__main__":
     drc, zipf = exportar(arq)
     lista_de_pecas(pl)
     erros, avisos, nu, texto = resumo_drc(drc)
+    x0, y0, x1, y1 = pl.contorno.bounds
     print(arq)
+    print(f"tamanho: {x1 - x0:.1f} × {y1 - y0:.1f} mm, {P.PCB_ESP} mm de espessura")
     print("falhas no roteamento:", falhas or "nenhuma")
     print("vias de costura:", n_vias)
     print("DRC:", len(erros), "erros,", len(avisos), "avisos,", nu, "pads sem ligação")
     for e in (erros + avisos)[:30]:
         print("  ", e.replace("\n", " | ")[:300])
+    if erros or falhas or nu:
+        sys.exit(1)

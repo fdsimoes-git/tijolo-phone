@@ -1,164 +1,42 @@
 """
 O guia de montagem (uma página HTML, publicada como artifact):
 
-    python3 guia.py          (da pasta montagem/; antes: caixa/caixa.py, que faz saida/caixa/visual/)
+    python3 guia.py          (da pasta montagem/; antes: placa/placa.py e caixa/caixa.py)
 
-Sai em saida/guia/: index.html (os desenhos de desenho.py vão dentro) e 3d/pecas.json
-(as peças da vista 3D). A imagem de capa (capa.png, o que aparece antes da vista 3D
-carregar) é uma foto da própria vista 3D, tirada com o navegador.
+Sai em saida/guia/: index.html, pcb-frente.svg e pcb-tras.svg (os desenhos da PCB,
+tirados do KiCad e recoloridos) e 3d/pecas.json (as peças da vista 3D). A imagem de
+capa (capa.png, o que aparece antes da vista 3D carregar) é uma foto da própria
+vista 3D, tirada com o navegador.
 """
 import base64
 import html
 import json
 import os
+import re
 import struct
 
 import numpy as np
 
 import projeto as P
-import fiacao as F
-import desenho as D
 
 AQUI = os.path.dirname(os.path.abspath(__file__))
 SAIDA = os.path.join(AQUI, "saida", "guia")
 CDN = "https://cdn.jsdelivr.net/npm/three@0.128.0"
+ARTIFACT = "https://claude.ai/artifact/CuJ8r7VZzr5Dn8WH7geubx"
+
+LARGURA = P.CAV_X1 - P.CAV_X0 + 2 * P.PAREDE
+COMPRIMENTO = P.CAV_Y1 - P.CAV_Y0 + 2 * P.PAREDE
+PCB_L, PCB_A = P.PCB_X1 - P.PCB_X0, P.PCB_Y1 - P.LINGUA[1]
+# o desenho anterior (placa ilhada com 14 chaves e fios), para comparar: espessura, largura, comprimento, fios
+ANTES = dict(espessura=38.17, largura=50.3, comprimento=141.2, fios=19)
 
 
 def esc(s):
     return html.escape(str(s), quote=True)
 
 
-def svg(nome):
-    with open(os.path.join(AQUI, "saida", nome + ".svg"), encoding="utf-8") as f:
-        return f.read()
-
-
 def mm(v, casas=1):
     return f"{v:.{casas}f}".replace(".", ",")
-
-
-# ---------------------------------------------------------------------------
-# tabelas a partir da fiação
-# ---------------------------------------------------------------------------
-COR_NOME = {"vermelho": "vermelho", "preto": "preto", "laranja": "laranja", "amarelo": "amarelo", "verde": "verde",
-            "azul": "azul", "roxo": "roxo", "cinza": "cinza", "branco": "branco", "marrom": "marrom"}
-
-
-def bolinha(cor):
-    if not cor:
-        return ""
-    return f'<span class="cor" style="--c:{D.COR_FIO.get(cor, "#888")}"></span>{esc(COR_NOME.get(cor, cor))}'
-
-
-def caminho_curto(c):
-    """os furos de passagem principais (sem repetir as colunas do meio)"""
-    if len(c) <= 4:
-        return " → ".join(c)
-    pontos = [c[0]]
-    for i in range(1, len(c) - 1):
-        a, b, n = c[i - 1], c[i], c[i + 1]
-        mesma_col = a[0] == b[0] == n[0]
-        mesma_lin = a[1:] == b[1:] == n[1:]
-        if not (mesma_col or mesma_lin):
-            pontos.append(b)
-    pontos.append(c[-1])
-    return " → ".join(pontos)
-
-
-def tabela_matriz():
-    linhas = []
-    for l in F.LIG:
-        if l.etapa != "matriz":
-            continue
-        tipo = "ponte de solda" if l.tipo == "ponte" else "fio nu"
-        linhas.append(f"<tr><td class='furo'>{esc(l.de)}</td><td class='furo'>{esc(l.ate)}</td><td>{tipo}</td>"
-                      f"<td>{esc(l.sinal)}</td></tr>")
-    return ("<div class='rolagem'><table><thead><tr><th>De</th><th>Até</th><th>Como</th><th>O que liga</th></tr></thead>"
-            f"<tbody>{''.join(linhas)}</tbody></table></div>")
-
-
-def tabela_fios(etapa, espelhada=False):
-    import importlib
-    os.environ["TELA_ESPELHADA"] = "1" if espelhada else "0"
-    importlib.reload(F)
-    linhas = []
-    for l in F.LIG:
-        if l.etapa != etapa:
-            continue
-        ponte = next((m for m in F.LIG if m.lado == "frente" and m.sinal == l.sinal and m.de == l.ate), None)
-        pino = ""
-        if ponte:
-            pino = f"ponte <span class='furo'>{esc(ponte.de)}</span>–<span class='furo'>{esc(ponte.ate)}</span>"
-        if l.sinal == "GND dos botões" and etapa == "esquerda":
-            pino = "ponte <span class='furo'>D10</span>–<span class='furo'>E10</span>–<span class='furo'>F10</span>"
-        alvo = ""
-        if l.sinal.startswith("tela "):
-            g = next(g for p, s, g, c in F.TELA_LIGA if f"tela {s}" == l.sinal)
-            alvo = g
-        elif l.sinal in F.GPIO_TECLADO:
-            alvo = F.GPIO_TECLADO[l.sinal]
-        elif l.sinal == "botão vermelho":
-            alvo = F.GPIO_VERMELHO
-        elif l.sinal == "botão verde":
-            alvo = F.GPIO_VERDE
-        elif l.sinal.startswith("GND"):
-            alvo = "GND"
-        linhas.append(
-            f"<tr><td>{esc(l.sinal)}</td><td class='furo'>{esc(l.de)}</td>"
-            f"<td class='mono pequeno'>{esc(caminho_curto(l.caminho))}</td>"
-            f"<td class='furo'>{esc(l.ate)}</td><td>{pino}</td><td class='mono'>{esc(alvo)}</td><td>{bolinha(l.cor)}</td></tr>")
-    os.environ["TELA_ESPELHADA"] = "0"
-    importlib.reload(F)
-    return ("<div class='rolagem'><table><thead><tr><th>Sinal</th><th>Começa</th><th>Por onde (atrás)</th><th>Atravessa</th>"
-            "<th>Na frente</th><th>Pino</th><th>Cor</th></tr></thead>"
-            f"<tbody>{''.join(linhas)}</tbody></table></div>")
-
-
-def tabela_chaves():
-    linhas = []
-    for ch in F.CHAVES:
-        (a, b), (c, d) = ch.pernas()
-        nome = {"verde": "verde", "vermelho": "vermelho"}.get(ch.rotulo, ch.rotulo)
-        linhas.append(f"<tr><td class='tecla-nome'>{esc(nome)}</td><td class='furo'>{a}</td><td class='furo'>{b}</td>"
-                      f"<td class='furo'>{c}</td><td class='furo'>{d}</td></tr>")
-    return ("<div class='rolagem'><table class='compacta'><thead><tr><th>Tecla</th><th>Em cima, esq.</th><th>Em cima, dir.</th>"
-            "<th>Embaixo, esq.</th><th>Embaixo, dir.</th></tr></thead>"
-            f"<tbody>{''.join(linhas)}</tbody></table></div>")
-
-
-def tabela_teste():
-    fil = {"1": "fileira 1 2 3", "2": "fileira 1 2 3", "3": "fileira 1 2 3", "4": "fileira 4 5 6", "5": "fileira 4 5 6",
-           "6": "fileira 4 5 6", "7": "fileira 7 8 9", "8": "fileira 7 8 9", "9": "fileira 7 8 9", "*": "fileira * 0 #",
-           "0": "fileira * 0 #", "#": "fileira * 0 #"}
-    col = {"1": "coluna 1 4 7 *", "4": "coluna 1 4 7 *", "7": "coluna 1 4 7 *", "*": "coluna 1 4 7 *",
-           "2": "coluna 2 5 8 0", "5": "coluna 2 5 8 0", "8": "coluna 2 5 8 0", "0": "coluna 2 5 8 0",
-           "3": "coluna 3 6 9 #", "6": "coluna 3 6 9 #", "9": "coluna 3 6 9 #", "#": "coluna 3 6 9 #"}
-
-    def ponto(sinal):
-        if sinal == "coluna 1 4 7 *":
-            return "C38 (atrás)"
-        return f"Q{F.DESTINO[sinal]} (ponta na frente)"
-    linhas = []
-    for t in ["1", "2", "3", "4", "5", "6", "7", "8", "9", "*", "0", "#"]:
-        linhas.append(f"<tr><td class='tecla-nome'>{t}</td><td class='mono'>{ponto(fil[t])}</td>"
-                      f"<td class='mono'>{ponto(col[t])}</td></tr>")
-    linhas.append("<tr><td class='tecla-nome'>verde</td><td class='mono'>B34 (atrás)</td><td class='mono'>B32 (atrás)</td></tr>")
-    linhas.append(f"<tr><td class='tecla-nome'>vermelho</td><td class='mono'>Q{F.DESTINO['botão vermelho']} (ponta na frente)</td>"
-                  "<td class='mono'>B32 (atrás)</td></tr>")
-    return ("<div class='rolagem'><table class='compacta'><thead><tr><th>Aperte</th><th>Ponta 1</th><th>Ponta 2</th></tr></thead>"
-            f"<tbody>{''.join(linhas)}</tbody></table></div>")
-
-
-def tabela_tela(espelhada=False):
-    linhas = []
-    for p, s, g, c in F.TELA_LIGA:
-        col = P.letra(P.TELA_COL0 + (13 - (p - 1) if espelhada else p - 1))
-        n = F.linha_j1(g)
-        linhas.append(f"<tr><td>{p}</td><td>{esc(s)}</td><td class='furo'>{col}1</td><td class='furo'>E{n}</td>"
-                      f"<td class='mono'>{esc(g)}</td><td>{bolinha(c)}</td></tr>")
-    return ("<div class='rolagem'><table class='compacta'><thead><tr><th>Pino</th><th>Na tela</th><th>Furo</th>"
-            "<th>Fio até</th><th>LILYGO</th><th>Cor</th></tr></thead>"
-            f"<tbody>{''.join(linhas)}</tbody></table></div>")
 
 
 # ---------------------------------------------------------------------------
@@ -169,20 +47,25 @@ CSS = r"""
 :root {
   --papel: #eef0eb;  --cartao: #f8f9f6;  --tinta: #1c2420;  --tinta-2: #4c5852;  --linha: #c9cfc7;
   --verde: #2f6247;  --cobre: #b06a1f;  --cobre-claro: #f3e2cd;  --alerta: #a3341f;  --alerta-fundo: #f6dfd8;
-  --ok: #2f7a4a;  --sombra: rgba(28, 36, 32, .08);
+  --ok: #2f7a4a;  --sombra: rgba(28, 36, 32, .08);  --fundo-3d: #e2e6e0;  --prancha: #f4f2ea;
+  --d-caixa: #8f989f;  --d-caixa-2: #b4bcc2;  --d-lilygo: #27485a;  --d-pilha: #d9a441;  --d-pcb: #2f7a4f;
+  --d-tela: #a8483c;  --d-vidro: #20262e;  --d-vao: #dfe4dd;  --d-som: #8a6f4e;
   --display: "Barlow Condensed", "Arial Narrow", sans-serif;
   --texto: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
   --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
-  --fundo-3d: #e2e6e0;
 }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
   --papel: #121815;  --cartao: #19211d;  --tinta: #e1e7e1;  --tinta-2: #a5b1aa;  --linha: #2f3a34;
   --verde: #5fae80;  --cobre: #e0a060;  --cobre-claro: #3a2a17;  --alerta: #f08a72;  --alerta-fundo: #3a1d16;
-  --ok: #6fc98f;  --sombra: rgba(0, 0, 0, .35);  --fundo-3d: #1b2420;  color-scheme: dark; } }
+  --ok: #6fc98f;  --sombra: rgba(0, 0, 0, .35);  --fundo-3d: #1b2420;  --prancha: #e9e6dc;
+  --d-caixa: #6f7880;  --d-caixa-2: #4d565d;  --d-lilygo: #3d6b83;  --d-pilha: #c9973a;  --d-pcb: #3f9463;
+  --d-tela: #b85a4d;  --d-vidro: #3b454e;  --d-vao: #232d28;  --d-som: #a98a63;  color-scheme: dark; } }
 :root[data-theme="dark"] {
   --papel: #121815;  --cartao: #19211d;  --tinta: #e1e7e1;  --tinta-2: #a5b1aa;  --linha: #2f3a34;
   --verde: #5fae80;  --cobre: #e0a060;  --cobre-claro: #3a2a17;  --alerta: #f08a72;  --alerta-fundo: #3a1d16;
-  --ok: #6fc98f;  --sombra: rgba(0, 0, 0, .35);  --fundo-3d: #1b2420;  color-scheme: dark; }
+  --ok: #6fc98f;  --sombra: rgba(0, 0, 0, .35);  --fundo-3d: #1b2420;  --prancha: #e9e6dc;
+  --d-caixa: #6f7880;  --d-caixa-2: #4d565d;  --d-lilygo: #3d6b83;  --d-pilha: #c9973a;  --d-pcb: #3f9463;
+  --d-tela: #b85a4d;  --d-vidro: #3b454e;  --d-vao: #232d28;  --d-som: #a98a63;  color-scheme: dark; }
 
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--papel); color: var(--tinta); font: 400 16px/1.6 var(--texto);
@@ -191,7 +74,7 @@ body { margin: 0; background: var(--papel); color: var(--tinta); font: 400 16px/
   grid-template-columns: 220px minmax(0, 1fr); gap: 40px; }
 @media (max-width: 900px) { .pagina { grid-template-columns: minmax(0, 1fr); gap: 0; } nav.indice { display: none; } }
 nav.indice { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 20px); align-self: start;
-  font-size: 14px; line-height: 1.45; padding-top: 6px; }
+  font-size: 14px; line-height: 1.45; padding-top: 6px; max-height: calc(100vh - 40px); overflow-y: auto; }
 nav.indice a { display: block; color: var(--tinta-2); text-decoration: none; padding: 4px 0 4px 12px;
   border-left: 2px solid var(--linha); }
 nav.indice a:hover, nav.indice a:focus-visible { color: var(--tinta); border-left-color: var(--cobre); outline: none; }
@@ -206,35 +89,51 @@ p { margin: 12px 0; }
 a { color: var(--verde); }
 .eyebrow { font-family: var(--mono); font-size: 13px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--cobre); }
 .lead { font-size: 19px; color: var(--tinta-2); max-width: 60ch; }
-.mono, .furo { font-family: var(--mono); }
-.furo { font-weight: 500; white-space: nowrap; }
+.mono { font-family: var(--mono); }
 .pequeno { font-size: 13px; color: var(--tinta-2); }
 kbd, code { font-family: var(--mono); font-size: .9em; background: var(--cartao); border: 1px solid var(--linha);
-  border-radius: 4px; padding: 0 5px; }
+  border-radius: 4px; padding: 0 5px; overflow-wrap: anywhere; }
 .fichas { display: flex; flex-wrap: wrap; gap: 8px 10px; margin: 20px 0 6px; padding: 0; list-style: none; }
 .fichas li { font-family: var(--mono); font-size: 13px; border: 1px solid var(--linha); border-radius: 999px;
   padding: 4px 12px; background: var(--cartao); }
 
 /* a vista 3D */
 .vista { position: relative; margin: 26px 0 8px; border-radius: 10px; overflow: hidden; background: var(--fundo-3d);
-  aspect-ratio: 16 / 10; max-width: 100%; }
+  aspect-ratio: 16 / 11; max-width: 100%; }
 .vista img, .vista canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; display: block; }
 .vista canvas { touch-action: none; cursor: grab; }
-.vista .controles { position: absolute; left: 12px; bottom: 12px; display: flex; flex-wrap: wrap; gap: 6px; z-index: 2; }
+@media (max-width: 560px) { .vista { aspect-ratio: 4 / 5; } }
+.vista .controles { position: absolute; left: 12px; right: 12px; bottom: 12px; display: flex; flex-wrap: wrap; gap: 6px; z-index: 2; }
 .vista .dica { position: absolute; right: 12px; top: 10px; font-size: 12px; color: var(--tinta-2); z-index: 2; }
 button.chip { font: 500 13px/1 var(--texto); color: var(--tinta); background: var(--cartao); border: 1px solid var(--linha);
   border-radius: 999px; padding: 8px 12px; cursor: pointer; }
 button.chip[aria-pressed="true"] { background: var(--tinta); color: var(--papel); border-color: var(--tinta); }
-button.chip:focus-visible, button.botao:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--cobre); outline-offset: 2px; }
+button.chip:focus-visible, button.botao:focus-visible, input:focus-visible { outline: 2px solid var(--cobre); outline-offset: 2px; }
 
 /* figuras */
 figure { margin: 22px 0; }
-figure .desenhos { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 18px; align-items: start; }
-figure .desenho-caixa { background: var(--cartao); border: 1px solid var(--linha); border-radius: 8px; padding: 10px; min-width: 0; }
 figcaption { font-size: 14px; color: var(--tinta-2); margin-top: 8px; max-width: 75ch; }
-.desenho { width: 100%; height: auto; display: block; }
-.corte-caixa { overflow-x: auto; }
-.corte-caixa .desenho { min-width: 640px; }
+.duas { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 18px; align-items: start; }
+.prancha { background: var(--prancha); border: 1px solid var(--linha); border-radius: 8px; padding: 12px; min-width: 0; }
+.prancha img { display: block; width: 100%; height: auto; }
+.prancha .titulo { font-family: var(--mono); font-size: 12px; letter-spacing: .8px; text-transform: uppercase; color: #4c5852;
+  margin-bottom: 8px; }
+.lado-a-lado { display: grid; grid-template-columns: minmax(0, 420px) minmax(0, 1fr); gap: 28px; align-items: start; }
+@media (max-width: 760px) { .lado-a-lado { grid-template-columns: minmax(0, 1fr); } }
+.desenho-caixa { background: var(--cartao); border: 1px solid var(--linha); border-radius: 8px; padding: 10px; min-width: 0; }
+svg.dz { display: block; width: 100%; height: auto; }
+svg.dz text { font-family: var(--texto); fill: var(--tinta); }
+svg.dz .fino { fill: var(--tinta-2); }
+svg.dz .guia { stroke: var(--tinta-2); stroke-width: .8; fill: none; }
+svg.dz .cota { stroke: var(--tinta); stroke-width: 1; fill: none; }
+svg.dz .c-caixa { fill: var(--d-caixa); } svg.dz .c-caixa2 { fill: var(--d-caixa-2); } svg.dz .c-lilygo { fill: var(--d-lilygo); }
+svg.dz .c-pilha { fill: var(--d-pilha); } svg.dz .c-pcb { fill: var(--d-pcb); } svg.dz .c-tela { fill: var(--d-tela); }
+svg.dz .c-vidro { fill: var(--d-vidro); } svg.dz .c-vao { fill: var(--d-vao); } svg.dz .c-som { fill: var(--d-som); }
+svg.dz .contorno { fill: none; stroke: var(--tinta-2); stroke-width: .35; }
+svg.dz .tracejado { fill: none; stroke: var(--tinta-2); stroke-width: .35; stroke-dasharray: 1.4 1; }
+svg.dz .cabo-som { fill: none; stroke: var(--cobre); stroke-width: 1.1; stroke-linecap: round; stroke-linejoin: round; }
+svg.dz .cabo-mic { fill: none; stroke: var(--verde); stroke-width: 1.1; stroke-linecap: round; stroke-linejoin: round; }
+svg.dz .cabo-antena { fill: none; stroke: var(--alerta); stroke-width: .9; stroke-linecap: round; stroke-dasharray: 2 1.4; }
 
 /* tabelas */
 .rolagem { overflow-x: auto; margin: 14px 0; border: 1px solid var(--linha); border-radius: 8px; background: var(--cartao); }
@@ -242,17 +141,15 @@ table { border-collapse: collapse; width: 100%; font-size: 14px; font-variant-nu
 th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--linha); vertical-align: top; }
 th { font-family: var(--mono); font-weight: 500; font-size: 12px; letter-spacing: .6px; text-transform: uppercase; color: var(--tinta-2); }
 tbody tr:last-child td { border-bottom: 0; }
-table.compacta { width: auto; min-width: 100%; }
-.tecla-nome { font-family: var(--display); font-size: 18px; font-weight: 600; }
-.cor { display: inline-block; width: 11px; height: 11px; border-radius: 50%; background: var(--c); margin-right: 6px;
-  vertical-align: -1px; box-shadow: 0 0 0 1px var(--linha); }
-.tem { color: var(--ok); font-weight: 600; }
-.comprar { color: var(--cobre); font-weight: 600; }
+td.num, th.num { text-align: right; white-space: nowrap; }
+.tem { color: var(--ok); font-weight: 600; white-space: nowrap; }
+.comprar { color: var(--cobre); font-weight: 600; white-space: nowrap; }
+.total td { font-weight: 600; border-top: 2px solid var(--tinta); }
 
 /* passos */
 .passo { margin-top: 56px; }
 .passo-cab { display: flex; gap: 16px; align-items: baseline; border-top: 2px solid var(--tinta); padding-top: 16px; }
-.passo-num { font-family: var(--display); font-size: 54px; line-height: .8; color: var(--cobre); font-weight: 700; min-width: 1.4em; }
+.passo-num { font-family: var(--display); font-size: 54px; line-height: .8; color: var(--cobre); font-weight: 700; min-width: 1.2em; }
 .passo-cab h2 { margin: 0; border: 0; padding: 0; }
 .quando { font-family: var(--mono); font-size: 12px; letter-spacing: 1px; text-transform: uppercase; color: var(--tinta-2); }
 ol.faz { padding-left: 22px; }
@@ -264,79 +161,21 @@ ol.faz li { margin: 8px 0; }
 .confere input { margin-top: 5px; width: 17px; height: 17px; accent-color: var(--verde); flex: none; }
 .confere label { cursor: pointer; }
 .confere input:checked + label { color: var(--tinta-2); text-decoration: line-through; text-decoration-color: var(--linha); }
-.progresso { font-family: var(--mono); font-size: 13px; color: var(--tinta-2); }
-
-/* alternância da tela */
-.alterna { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 12px 0; }
-.alterna span { font-size: 14px; color: var(--tinta-2); }
 
 /* formulário das medidas */
-form.medidas { display: grid; gap: 12px; margin: 16px 0; max-width: 720px; }
+form.medidas { display: grid; gap: 4px; margin: 16px 0; max-width: 760px; }
 .campo { display: grid; grid-template-columns: minmax(0, 1fr) 150px; gap: 12px; align-items: center;
-  padding: 8px 0; border-bottom: 1px solid var(--linha); }
+  padding: 10px 0; border-bottom: 1px solid var(--linha); }
 .campo label { font-size: 15px; }
 .campo .pequeno { display: block; }
-.campo input, .campo select { font: 500 15px var(--mono); padding: 7px 9px; border: 1px solid var(--linha);
+.campo input { font: 500 15px var(--mono); padding: 7px 9px; border: 1px solid var(--linha);
   border-radius: 6px; background: var(--cartao); color: var(--tinta); width: 100%; }
 @media (max-width: 520px) { .campo { grid-template-columns: minmax(0, 1fr); } }
 button.botao { font: 600 15px var(--texto); background: var(--verde); color: var(--papel); border: 0; border-radius: 8px;
-  padding: 11px 18px; cursor: pointer; justify-self: start; }
-textarea#medidas-texto { width: 100%; min-height: 150px; font: 13px/1.5 var(--mono); padding: 10px; border-radius: 8px;
-  border: 1px solid var(--linha); background: var(--cartao); color: var(--tinta); }
+  padding: 11px 18px; cursor: pointer; justify-self: start; margin-top: 12px; }
+textarea#medidas-texto { width: 100%; min-height: 190px; font: 13px/1.5 var(--mono); padding: 10px; border-radius: 8px;
+  border: 1px solid var(--linha); background: var(--cartao); color: var(--tinta); margin-top: 8px; }
 .copiado { font-size: 14px; color: var(--ok); }
-
-/* cores do desenho (as do metal e da placa não mudam com o tema; as letras sim) */
-.desenho text { font-family: var(--texto); }
-.desenho .pcb { fill: #2f6247; stroke: #1d3f2d; stroke-width: .35; }
-.desenho .ilha { fill: #c9974c; } .desenho .buraco { fill: #173224; }
-.desenho .eixo { font-size: 1.45px; fill: var(--tinta-2); } .desenho .eixoLinha { font-size: 1.3px; }
-.desenho .tituloFolha { font-size: 2.6px; font-weight: 600; letter-spacing: .25px; fill: var(--tinta); font-family: var(--display); }
-.desenho .guia { stroke: var(--linha); stroke-width: .18; } .desenho .guiaUsada { stroke: var(--tinta-2); stroke-width: .22; }
-.desenho .rotPino { font-size: 1.35px; fill: var(--tinta-2); opacity: .7; }
-.desenho .rotPinoUsado { fill: var(--tinta); font-weight: 600; opacity: 1; }
-.desenho .pinoLilygo { fill: #e9e6dc; stroke: #4c4b45; stroke-width: .25; }
-.desenho .chave { fill: #3b3d40; stroke: #151617; stroke-width: .25; } .desenho .chave_verde { fill: #2f9e58; } .desenho .chave_vermelho { fill: #cf3b33; }
-.desenho .botaozinho { fill: #151617; } .desenho .botao_verde { fill: #1b5e35; } .desenho .botao_vermelho { fill: #7d1e19; }
-.desenho .rotTecla { font-size: 2.1px; fill: #fff; font-weight: 600; }
-.desenho .pernaFrente { fill: #d8d4c8; }
-.desenho .chaveSombra { fill: none; stroke: #e9e6dc; stroke-width: .25; stroke-dasharray: .7 .5; opacity: .85; }
-.desenho .sombra_verde { stroke: #3fd07a; stroke-width: .4; } .desenho .sombra_vermelho { stroke: #ff6b5f; stroke-width: .4; }
-.desenho .rotTeclaTras { font-size: 1.7px; fill: #e9e6dc; opacity: .9; }
-.desenho .soldaPerna { fill: #d6d9de; stroke: #7d838b; stroke-width: .15; } .desenho .soldaPernaApagada { opacity: .5; }
-.desenho .telaContorno { fill: #20325a; fill-opacity: .14; stroke: #e9e6dc; stroke-width: .35; stroke-dasharray: 1.2 .7; }
-.desenho .telaVidro { fill: #20325a; fill-opacity: .12; }
-.desenho .rotTela { font-size: 2.1px; fill: #f0efe9; font-weight: 600; } .desenho .rotTelaP { font-size: 1.6px; fill: #f0efe9; }
-.desenho .pinoTela { fill: #f2c230; stroke: #6b5410; stroke-width: .2; } .desenho .pinoTelaLivre { fill: #b9b6ab; }
-.desenho .rotPinoTela { font-size: 1.3px; fill: var(--tinta); }
-.desenho .ponteFrente, .desenho .ponteSolda { stroke: #d6d9de; stroke-width: 1.3; stroke-linecap: round; }
-.desenho .pontaFio { stroke: #1d1d1d; stroke-width: .12; }
-.desenho .fioNu { fill: none; stroke: #d6d9de; stroke-width: .42; stroke-linecap: round; } .desenho .soldaNu { fill: #d6d9de; }
-.desenho .fio { fill: none; stroke-width: .5; stroke-linecap: round; stroke-linejoin: round; }
-.desenho .fioBorda { fill: none; stroke: #111; stroke-width: .72; stroke-linecap: round; stroke-linejoin: round; opacity: .55; }
-.desenho .soldaFio { fill: #d6d9de; stroke-width: .35; } .desenho .atravessa { fill: #111; stroke-width: .45; }
-.desenho .lilygoContorno { fill: none; stroke: #e9e6dc; stroke-width: .35; stroke-dasharray: 1.4 .8; }
-.desenho .lilygoTapa { fill: #1e2b36; fill-opacity: .84; stroke: #0e151b; stroke-width: .3; }
-.desenho .rotLilygoGrande { font-size: 4px; fill: #e9e6dc; font-weight: 700; letter-spacing: .4px; font-family: var(--display); }
-.desenho .rotLilygoP { font-size: 1.9px; fill: #c9c6bb; }
-.desenho .pecaAlta { fill: #e0553e; fill-opacity: .38; stroke: #e0553e; stroke-width: .2; }
-.desenho .pecaMedia { fill: #e8a43a; fill-opacity: .28; stroke: #e8a43a; stroke-width: .2; }
-.desenho .rotPeca { font-size: 1.25px; fill: #fff; font-weight: 600; } .desenho .fundoRotulo { fill: #1d2b24; fill-opacity: .72; }
-.desenho .plasticoBarra { fill: #141414; opacity: .75; } .desenho .rotBarra { font-size: 1.6px; fill: #fff; font-weight: 600; }
-.desenho .rotMaco { font-size: 1.4px; fill: #fff; }
-.desenho .falantePlanta { fill: #a6592e; fill-opacity: .35; stroke: #a6592e; stroke-width: .25; stroke-dasharray: 1 .6; }
-.desenho .rotFalante { font-size: 1.4px; fill: #fff; }
-.desenho .capCeram { fill: #c8913f; stroke: #6e4f1c; stroke-width: .15; } .desenho .capEletro { fill: #2f4f8f; }
-.desenho .rotCap { font-size: 1.3px; fill: var(--tinta); }
-.desenho .caixaFundo { fill: #8f969e; } .desenho .caixaFrente { fill: #6f767e; } .desenho .cavidade { fill: var(--cartao); }
-.desenho .bateria { fill: #4f8f5a; } .desenho .suporte { fill: #7b7a74; }
-.desenho .lilygoCorte { fill: #1f4f3b; } .desenho .pecaCorte { fill: #6b6f75; } .desenho .pinoCorte { stroke: #c9a227; stroke-width: .35; }
-.desenho .plastico { fill: #222; } .desenho .plastico2 { fill: #474747; } .desenho .placaCorte { fill: #2f6247; }
-.desenho .telaCortePcb { fill: #b23a35; } .desenho .telaCorteVidro { fill: #20325a; }
-.desenho .chaveCorte { fill: #3b3d40; } .desenho .teclaCorte { fill: #c9c4b4; }
-.desenho .falante { fill: #a6592e; } .desenho .mic { fill: #6b6f75; }
-.desenho .cota { stroke: var(--tinta-2); stroke-width: .22; } .desenho .rotCota { font-size: 2.1px; fill: var(--tinta); }
-.desenho .rotCortePeq { font-size: 1.9px; fill: var(--tinta); } .desenho .rotCorteClaro { font-size: 2.1px; fill: #fff; }
-.desenho .rotCorteEixo { font-size: 2px; fill: var(--tinta-2); }
 @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
 """
 
@@ -354,232 +193,456 @@ def passo(num, ancora, titulo, quando, corpo, confere):
 </section>"""
 
 
-def alterna_tela():
-    """Os botões da ordem dos pinos da tela (todos ficam iguais: o script sincroniza)"""
-    return """<div class="alterna" role="group" aria-label="De que lado fica o VCC da tela">
-  <span>Na minha tela (de frente, com os pinos em cima), o VCC fica:</span>
-  <button class="chip" type="button" data-tela="normal" aria-pressed="true">à esquerda</button>
-  <button class="chip" type="button" data-tela="espelhada" aria-pressed="false">à direita</button>
-</div>"""
+# ---------------------------------------------------------------------------
+# os desenhos
+# ---------------------------------------------------------------------------
+CAMADAS = [   # de trás para a frente: (espessura, nome, classe)
+    (P.FUNDO, "fundo da caixa", "c-caixa"),
+    (P.VAO_COMP, "componentes da LILYGO", "c-vao"),
+    (P.L.espessura, "placa da LILYGO", "c-lilygo"),
+    (P.L.pilha_altura, "pilha 18650 no suporte", "c-pilha"),
+    (P.FOLGA_PILHA, "folga", "c-vao"),
+    (P.PCB_ESP, "PCB da frente", "c-pcb"),
+    (P.T.barra_plastico, "plástico dos pinos da tela", "c-vidro"),
+    (P.T.pcb, "plaquinha da tela", "c-tela"),
+    (P.T.lcd, "vidro da tela", "c-vidro"),
+    (P.FOLGA_VIDRO + P.ARO, "folga e aro da frente", "c-caixa"),
+]
 
 
-def figura(svgs, legenda, corte=False):
-    caixas = "".join(f"<div class='desenho-caixa{' corte-caixa' if corte else ''}'>{s}</div>" for s in svgs)
-    return f"<figure><div class='desenhos'>{caixas}</div><figcaption>{legenda}</figcaption></figure>"
+def desenho_espessura():
+    """A pilha de camadas, em escala, com o nome e a espessura de cada uma"""
+    esc_ = 9.0                                   # px por mm
+    x0, larg = 46, 96
+    total = sum(c[0] for c in CAMADAS)
+    assert abs(total - P.Z_TOPO) < 0.01, (total, P.Z_TOPO)
+    topo = 26
+    alt = total * esc_
+    base = topo + alt
+    pecas, rot = [], []
+    z = 0.0
+    for esp, nome, classe in CAMADAS:
+        y1 = base - z * esc_
+        y0 = base - (z + esp) * esc_
+        pecas.append(f"<rect class='{classe}' x='{x0}' y='{y0:.1f}' width='{larg}' height='{y1 - y0:.1f}'/>")
+        rot.append([(y0 + y1) / 2, esp, nome])
+        z += esp
+    # os rótulos, de cima para baixo, sem encavalar
+    rot.sort()
+    passo_min = 27.0
+    ys = [r[0] for r in rot]
+    for i in range(1, len(ys)):
+        ys[i] = max(ys[i], ys[i - 1] + passo_min)
+    sobra = ys[-1] - (base + 2)
+    if sobra > 0:
+        ys = [y - sobra for y in ys]
+        for i in range(len(ys) - 2, -1, -1):
+            ys[i] = min(ys[i], ys[i + 1] - passo_min)
+    xr = x0 + larg + 34
+    for (yc, esp, nome), yl in zip(rot, ys):
+        pecas.append(f"<polyline class='guia' points='{x0 + larg + 2},{yc:.1f} {x0 + larg + 16},{yc:.1f} {xr - 6},{yl:.1f}'/>")
+        pecas.append(f"<text x='{xr}' y='{yl + 4.5:.1f}' font-size='13'><tspan font-weight='600' "
+                     f"font-family='IBM Plex Mono, monospace'>{mm(esp, 2 if esp == P.T.barra_plastico else 1)}</tspan>"
+                     f"<tspan dx='8'>{esc(nome)}</tspan></text>")
+    # a cota do total
+    xc = x0 - 16
+    pecas.append(f"<path class='cota' d='M{xc - 5},{topo} H{xc + 5} M{xc},{topo} V{base} M{xc - 5},{base} H{xc + 5}'/>")
+    pecas.append(f"<text x='{xc - 7}' y='{(topo + base) / 2:.1f}' font-size='14' font-weight='600' text-anchor='middle' "
+                 f"transform='rotate(-90 {xc - 7} {(topo + base) / 2:.1f})'>{mm(total)} mm</text>")
+    pecas.append(f"<text class='fino' x='{x0 + larg / 2}' y='{topo - 9}' font-size='12' text-anchor='middle'>frente</text>")
+    pecas.append(f"<text class='fino' x='{x0 + larg / 2}' y='{base + 17}' font-size='12' text-anchor='middle'>trás</text>")
+    h = base + 26
+    return (f"<svg class='dz' viewBox='0 0 400 {h:.0f}' role='img' aria-label='As camadas do Tijolo, de trás para a frente, "
+            f"somando {mm(total)} milímetros'>{''.join(pecas)}</svg>")
+
+
+def desenho_cabos():
+    """O fundo visto de frente, sem a PCB: onde ficam o alto-falante, o microfone, a antena e por onde vão os cabos"""
+    mx0, my0 = 8.0, 8.0                          # margens (mm)
+    larg_txt = 52.0
+    W = mx0 + LARGURA + larg_txt
+    H = my0 * 2 + COMPRIMENTO
+
+    def x(v):
+        return mx0 + P.PAREDE + v
+
+    def y(v):
+        return my0 + P.PAREDE + (P.CAV_Y1 - v)
+
+    def ret(x0, y0, x1, y1, classe, raio=0.0, extra=""):
+        return (f"<rect class='{classe}' x='{x(x0):.2f}' y='{y(y1):.2f}' width='{x1 - x0:.2f}' height='{y1 - y0:.2f}' "
+                f"rx='{raio}' {extra}/>")
+
+    p = []
+    # a caixa
+    p.append(f"<rect class='c-caixa' x='{mx0}' y='{my0}' width='{LARGURA:.2f}' height='{COMPRIMENTO:.2f}' rx='5'/>")
+    p.append(ret(P.CAV_X0, P.CAV_Y0, P.CAV_X1, P.CAV_Y1, "c-vao", 3.2))
+    # a antena, colada na parede da esquerda
+    p.append(ret(-0.2, 34.0, 0.9, 145.5, "c-som"))
+    # a LILYGO e a pilha
+    lx0, ly0, lx1, ly1 = P.caixa_lilygo(0, 0, P.L.largura, P.L.altura)
+    p.append(ret(lx0, ly0, lx1, ly1, "c-lilygo", 2.0))
+    hx0, hy0, hx1, hy1 = P.caixa_lilygo(*P.L.suporte_18650)
+    p.append(ret(hx0, hy0, hx1, hy1, "c-caixa2", 1.0))
+    p.append(ret(P.PILHA_X - P.L.pilha_raio, P.PILHA_Y[0], P.PILHA_X + P.L.pilha_raio, P.PILHA_Y[1], "c-pilha", 2.5))
+    for barra in ("J1", "J2"):
+        bx, by0 = P.pino_barra(barra, 1)
+        _, by1 = P.pino_barra(barra, 16)
+        p.append(ret(bx - 1.27, by0 - 1.27, bx + 1.27, by1 + 1.27, "c-vidro"))
+    # os conectores do som (do lado da pilha) e o da antena (na face de baixo)
+    sx0, sy0, sx1, sy1 = P.caixa_lilygo(*P.L.spek)
+    qx0, qy0, qx1, qy1 = P.caixa_lilygo(*P.L.mic)
+    p.append(ret(sx0, sy0, sx1, sy1, "c-pcb"))
+    p.append(ret(qx0, qy0, qx1, qy1, "c-pcb"))
+    ux, uy = P.lilygo_para_tijolo(*P.L.ufl_lte)
+    p.append(f"<circle class='tracejado' cx='{x(ux):.2f}' cy='{y(uy):.2f}' r='1.6'/>")
+    # o alto-falante e o microfone
+    fy0 = P.FALANTE_Y + 0.1
+    p.append(ret(P.FALANTE_X0, fy0, P.FALANTE_X0 + P.FALANTE[0], fy0 + P.FALANTE[2], "c-som", 0.8))
+    p.append(ret(P.MIC_X - P.MIC_D / 2, 0.1, P.MIC_X + P.MIC_D / 2, P.MIC_L, "c-som", 0.8))
+    # a chave e o USB-C
+    cy0, cy1 = P.L.chave[0], P.L.chave[1]
+    kx0, ky0, kx1, ky1 = P.caixa_lilygo(P.L.chave_corpo_x[0], cy0, 0.0, cy1)
+    p.append(ret(kx0, ky0, kx1, ky1, "c-vidro"))
+    _, usb_y = P.lilygo_para_tijolo(0, P.L.usb_esp_y)
+    p.append(ret(P.CAV_X1 - 1.6, usb_y - 4.5, P.CAV_X1 + P.PAREDE + 0.3, usb_y + 4.5, "c-vidro", 0.8))
+
+    # os cabos
+    def caminho(pts, classe):
+        d = " ".join(f"{'M' if i == 0 else 'L'}{x(a):.2f},{y(b):.2f}" for i, (a, b) in enumerate(pts))
+        return f"<path class='{classe}' d='{d}'/>"
+
+    smx, smy = (sx0 + sx1) / 2, (sy0 + sy1) / 2
+    mcx, mcy = (qx0 + qx1) / 2, (qy0 + qy1) / 2
+    p.append(caminho([(P.FALANTE_X0 + 3.0, fy0), (12.5, fy0 - 5.0), (12.5, smy), (sx0, smy)], "cabo-som"))
+    p.append(caminho([(P.MIC_X - 2.0, P.MIC_L), (9.0, 13.0), (9.0, mcy), (qx0, mcy)], "cabo-mic"))
+    p.append(caminho([(0.9, 141.0), (6.0, 141.0), (6.0, ly1 + 3.0), (ux, ly1 + 3.0), (ux, uy)], "cabo-antena"))
+
+    # os rótulos, à direita
+    xt = mx0 + LARGURA + 5.0
+    rotulos = [
+        (fy0 + 3.0, P.FALANTE_X0 + P.FALANTE[0], "alto-falante", "em pé, virado para a grade"),
+        (uy, ux + 1.6, "conector LTE", "na face de baixo da LILYGO"),
+        (mcy, qx1, "conector MIC", "microfone"),
+        (smy, sx1, "conector SPEK", "alto-falante"),
+        (104.0, lx1, "LILYGO, de costas", "a pilha para a frente"),
+        (usb_y, P.CAV_X1 + P.PAREDE + 0.3, "USB-C", "carregar e gravar"),
+        ((ky0 + ky1) / 2, kx0 + 0.5, "chave liga/desliga", "alcançada por trás"),
+        (40.0, P.CAV_X0 + 0.9, "antena 4G", "colada na parede da esquerda"),
+        (3.0, P.MIC_X + P.MIC_D / 2, "microfone", "virado para os 3 furinhos"),
+    ]
+    rotulos.sort(key=lambda r: -r[0])
+    ys = [y(r[0]) for r in rotulos]
+    passo_min = 9.2
+    for i in range(1, len(ys)):
+        ys[i] = max(ys[i], ys[i - 1] + passo_min)
+    sobra = ys[-1] - (H - my0 - 4.0)
+    if sobra > 0:
+        ys = [v - sobra for v in ys]
+        for i in range(len(ys) - 2, -1, -1):
+            ys[i] = min(ys[i], ys[i + 1] - passo_min)
+    for (yv, xv, nome, sub), yl in zip(rotulos, ys):
+        p.append(f"<polyline class='guia' style='stroke-width:.25' points='{x(xv):.2f},{y(yv):.2f} {xt - 3.5:.2f},{yl:.2f} "
+                 f"{xt - 1:.2f},{yl:.2f}'/>")
+        p.append(f"<text x='{xt:.2f}' y='{yl + 0.4:.2f}' font-size='3.5' font-weight='600'>{esc(nome)}</text>")
+        p.append(f"<text class='fino' x='{xt:.2f}' y='{yl + 4.2:.2f}' font-size='3'>{esc(sub)}</text>")
+    return (f"<svg class='dz' viewBox='0 0 {W:.1f} {H:.1f}' role='img' aria-label='O fundo da caixa visto de frente, com a "
+            f"LILYGO, o alto-falante em cima, o microfone embaixo, a antena na parede da esquerda e o caminho dos cabos'>"
+            f"{''.join(p)}</svg>")
+
+
+def svg_da_pcb(lado):
+    """O desenho de uma face da PCB (só as letras e as ilhas), do KiCad, com as cores trocadas"""
+    with open(os.path.join(AQUI, "saida", "placa", f"tijolo-pcb-{lado}-letras.svg"), encoding="utf-8") as f:
+        s = f.read()
+    cores = {"#D864FF": "#B8791F", "#02FFEE": "#B8791F",        # as ilhas (onde vai solda)
+             "#F2EDA1": "#1E2B24", "#E8B2A7": "#1E2B24",        # as letras
+             "#D0D2CD": "#6B766F"}                               # a borda
+    for de, para in cores.items():
+        s = s.replace(de, para)
+    # sem o cabeçalho de XML antigo (<!DOCTYPE ...>): o artifact não aceita, e os navegadores não precisam
+    s = re.sub(r"<!DOCTYPE[^>]*>\s*", "", s, count=1)
+    face = "a face da frente" if lado == "frente" else "a face de trás, vista por trás"
+    s = re.sub(r"<title>.*?</title>", f"<title>Tijolo, PCB da frente: {face}</title>", s, count=1, flags=re.S)
+    return s
+
+
+# ---------------------------------------------------------------------------
+# as tabelas
+# ---------------------------------------------------------------------------
+def tabela(cab, linhas, classes=None):
+    classes = classes or [""] * len(cab)
+    th = "".join(f"<th class='{c}'>{h}</th>" for h, c in zip(cab, classes))
+    corpo = ""
+    for ln in linhas:
+        cls = ""
+        if isinstance(ln, dict):
+            cls, ln = f" class='{ln['classe']}'", ln["celulas"]
+        corpo += f"<tr{cls}>" + "".join(f"<td class='{c}'>{v}</td>" for v, c in zip(ln, classes)) + "</tr>"
+    return f"<div class='rolagem'><table><thead><tr>{th}</tr></thead><tbody>{corpo}</tbody></table></div>"
+
+
+def tabela_ligacoes():
+    def pino(gpio):
+        b, n = P.barra_de(gpio)
+        return f"{b}-{n}"
+    linhas = []
+    for nome, gpio in P.TELA_GPIO.items():
+        if gpio in ("3V3", "GND"):
+            onde = "J1-1 e J2-3" if gpio == "3V3" else "J1-2, J2-4 e J2-15"
+            linhas.append((f"Tela: {esc(nome)}", onde, gpio))
+        else:
+            linhas.append((f"Tela: {esc(nome)}", pino(gpio), gpio))
+    for k, gpio in enumerate(P.TECLADO_ABA, start=1):
+        if gpio:
+            linhas.append((f"Aba do teclado: furo {k}", pino(gpio), gpio))
+    linhas.append(("Botão verde", pino(P.GPIO_VERDE), P.GPIO_VERDE))
+    linhas.append(("Botão vermelho", pino(P.GPIO_VERMELHO), P.GPIO_VERMELHO))
+    return tabela(["Na PCB", "Pino da LILYGO", "ESP32"], linhas, ["", "mono", "mono"])
 
 
 def pagina():
-    frente_n, frente_e = svg("frente"), svg("frente_espelhada")
-    tras_a = svg("tras_antes")
-    tras_d_n, tras_d_e = svg("tras_depois"), svg("tras_depois_espelhada")
-    corte = svg("corte")
-    larg_caixa = P.CAV_X1 - P.CAV_X0 + 2 * P.PAREDE
-    comp_caixa = P.CAV_Y1 - P.CAV_Y0 + 2 * P.PAREDE
-    n_esq = len([l for l in F.LIG if l.etapa == "esquerda"])
-    n_dir = len([l for l in F.LIG if l.etapa == "direita"])
+    z_perna = P.FEMEA_PERNA_MIN
+    ganho = ANTES["espessura"] - P.Z_TOPO
+    sem_suporte = P.Z_TOPO - (P.Z_PCB - (P.Z_FEMEA1 + 0.1))        # a PCB logo acima das barras fêmea comuns
 
-    indice = [("conferir", "0", "Antes de começar"), ("comprar", "", "O que comprar"), ("como-fica", "", "Como fica"),
-              ("lilygo", "1", "Preparar a LILYGO"), ("cortar", "2", "Cortar a placa"), ("chaves", "3", "As 14 chaves"),
-              ("matriz", "4", "A matriz atrás"), ("direita", "5", "Os fios da direita"), ("multimetro", "6", "Teste com o multímetro"),
-              ("juntar", "7", "Juntar com a LILYGO"), ("pontes", "8", "As pontes da direita"), ("esquerda", "9", "Os fios da esquerda"),
-              ("tela", "10", "A tela"), ("firmware", "11", "Firmware e teste"), ("fechar", "12", "Fechar a caixa"),
-              ("caixa", "", "Imprimir a caixa"), ("medidas", "", "Medidas para a caixa"), ("depois", "", "Depois: a placa de circuito"),
-              ("problemas", "", "Se algo não funcionar")]
+    indice = [("conferir", "", "Confira antes"), ("medidas", "", "As medidas revisadas"), ("espessura", "", "A espessura e a PCB"),
+              ("comprar", "", "O que comprar"), ("pcb", "", "Encomendar a PCB"), ("imprimir", "", "Imprimir a caixa"),
+              ("cabos", "", "Cabos e fios"),
+              ("lilygo", "1", "Preparar a LILYGO"), ("pecas", "2", "As peças da PCB"), ("tela", "3", "A tela"),
+              ("barras", "4", "As barras fêmea"), ("teclado", "5", "O teclado"), ("som", "6", "Som e antena"),
+              ("juntar", "7", "Juntar e testar"), ("fechar", "8", "Fechar"),
+              ("problemas", "", "Se algo não funcionar"), ("fontes", "", "De onde vêm as medidas")]
     nav = "".join(f"<a href='#{a}'>{f'<span class=num>{n}</span>' if n else ''}{t}</a>" for a, n, t in indice)
 
+    # ------------------------------------------------------------------ os passos
     passos = []
-    passos.append(passo(1, "lilygo", "Preparar a LILYGO", "antes de tudo · sem pilha, chave em OFF, sem USB", f"""
-<p>A LILYGO fica atrás da placa da frente, com os componentes virados para ela e a pilha para o fundo da caixa. Entre as duas placas
-ficam {mm(P.VAO, 2)} mm: dois plásticos de barra de pinos, um em cima do outro.</p>
+    passos.append(passo(1, "lilygo", "Preparar a LILYGO", "15 minutos · sem pilha e sem USB", f"""
+<p>A LILYGO fica no fundo da caixa, de costas: os componentes olham para trás, a pilha e os pinos para a frente. Os pinos
+continuam como você soldou, com o plástico do lado da pilha.</p>
 <ol class="faz">
-  <li><b>Tire o conector SOLAR.</b> Ele tem 6,25 mm de altura e não cabe entre as placas (o painel solar não é usado). Corte o corpo
-  de plástico com o alicate de corte, aqueça cada perninha pelo lado da pilha e puxe com a pinça; limpe os furos com a malha.</li>
-  <li><b>As barras de pinos</b>: o plástico fica do lado dos componentes e os pinos compridos apontam para a frente, para a placa
-  ilhada. A ponta curta atravessa a LILYGO e é soldada do lado da pilha. Se as suas estão ao contrário, veja a
-  <a href="#conferir">conferência A</a>.</li>
-  <li><b>O segundo plástico</b>: de uma barra nova de 40 pinos, corte dois pedaços de 16. Puxe os pinos para fora, um por um, com o
-  alicate de bico, e deslize cada plástico vazio pelos pinos compridos da LILYGO até encostar no primeiro.</li>
-  <li><b>Fita Kapton</b> em cima da lata do modem (o quadrado metálico perto da ponta de baixo) e do suporte do chip, sem tapar a
-  entrada do chip, na borda esquerda. As soldas das teclas ficam a uns 2,5 mm deles.</li>
-</ol>
-<div class="nota">Dica: para as barras ficarem retas e paralelas enquanto você solda, encaixe as pontas compridas num pedaço de placa
-ilhada que sobrou, nas colunas F e R (12 furos de distância).</div>""",
-        ["O conector SOLAR saiu e os furos estão limpos.",
-         "Nas duas barras, os pinos compridos saem do lado dos componentes, com dois plásticos empilhados.",
-         "Sobram uns 3,5 mm de pino acima do segundo plástico.",
-         "A lata do modem e o suporte do chip estão cobertos com Kapton, e a entrada do chip continua livre."]))
-
-    passos.append(passo(2, "cortar", "Cortar a placa", "15 minutos", f"""
-<p>Uma placa ilhada <b>dupla face, com furos metalizados</b>, de 18 colunas × 51 linhas. As colunas são A a R, da esquerda para a
-direita, e as linhas 1 a 51, de cima para baixo, olhando de frente. Todos os nomes de furos deste guia (como <span class="furo">F12</span>)
-usam essa conta.</p>
-<ol class="faz">
-  <li>Risque com estilete, várias vezes e dos dois lados, pela fileira de furos <i>seguinte</i> à última que fica. Quebre na quina da
-  mesa.</li>
-  <li><b>Lixe as bordas</b> até sobrar meio passo (1,3 mm) do centro dos furos da beirada até a borda, em volta toda. A placa
-  pronta mede {mm(P.PLACA_LARGURA, 1)} × {mm(P.PLACA_ALTURA, 1)} mm. Não deixe mais de 1,5 mm: dentro da caixa sobram só 0,3 mm dos
-  lados, e embaixo, depois da linha 51, ficam os pilares dos parafusos, a 0,4 mm.</li>
-  <li>Escolha a frente e marque o furo <span class="furo">A1</span> (em cima, à esquerda) com caneta.</li>
+  <li>Tire a pilha e o cabo USB.</li>
+  <li><b>Tire o conector SOLAR.</b> É o conector branco de 2 pinos ao lado da chave liga/desliga, do lado dos componentes. Ele
+  tem 6,25 mm de altura e embaixo da LILYGO sobram {mm(P.VAO_COMP)} mm. Corte o corpo de plástico com o alicate de corte e depois
+  os dois pinos, rente à placa. Não precisa dessoldar. O painel solar não é usado no Tijolo.</li>
+  <li>Ponha o chip (nano-SIM) no suporte, se ainda não estiver lá.</li>
+  <li>Encaixe as duas <b>barras fêmea de perna longa</b> nos pinos da LILYGO, até encostarem no plástico preto. As pernas
+  compridas ficam apontando para cima.</li>
 </ol>""",
-        [f"A placa mede {mm(P.PLACA_LARGURA, 1)} mm de largura (no máximo 46) e {mm(P.PLACA_ALTURA, 1)} mm de altura (no máximo 130).",
-         "Em volta toda, da borda até o centro dos furos da beirada, dá no máximo 1,5 mm.",
-         "O A1 está marcado na frente."]))
+        ["O conector SOLAR saiu e não sobrou ponta alta no lugar dele.",
+         "O chip está no suporte.",
+         "As duas barras fêmea estão encaixadas até o fim, uma em cada fileira de 16 pinos."]))
 
-    passos.append(passo(3, "chaves", "As 14 chaves", "1 hora", f"""
-<p>Chaves tácteis de 6 × 6 × 5 mm, com 4 perninhas. As perninhas saem por dois lados do corpo, e cada perninha está sempre ligada à
-que fica de frente para ela, do outro lado. Apertar liga as de cima às de baixo. <b>Coloque as chaves com os lados de onde saem as
-perninhas para a esquerda e para a direita.</b></p>
+    passos.append(passo(2, "pecas", "As peças pequenas da PCB", "30 minutos", f"""
+<p>A face da frente da PCB tem escrito <b>TIJOLO</b>. A de trás, que fica virada para a pilha, tem escrito
+<b>ESTA FACE PARA A PILHA</b>. Cada peça tem o lugar marcado na placa.</p>
 <ol class="faz">
-  <li>Abra as perninhas com o alicate de bico, só um pouco: de um lado ao outro elas ficam a 3 passos de furo (um furo, dois
-  livres, o outro) e de cima para baixo, a 2 passos (um furo, um livre, o outro).</li>
-  <li>Encaixe pela frente, nos furos da tabela, com o corpo encostado na placa. Solde atrás.</li>
-  <li>Corte as perninhas atrás deixando no máximo 1 mm.</li>
+  <li><b>Os capacitores vão atrás</b> e a solda é feita pela frente. Os de cerâmica não têm lado: C1 (100 nF) e, se você tiver,
+  C5 (100 nF) e C4 (100 pF). Encoste o corpo na placa.</li>
+  <li><b>C2, o de 100 µF</b>, tem lado: a perna comprida (o +) entra no furo quadrado, marcado com +. A faixa clara do corpo
+  fica do lado do outro furo. O corpo fica em pé, encostado na placa, atrás.</li>
+  <li><b>As duas chaves tácteis vão na frente</b>: uma no retângulo VERDE, outra no VERMELHO. As 4 pernas só entram de um
+  jeito. Solde atrás.</li>
+  <li><b>Corte todas as pernas rente.</b> Atrás da placa, nenhuma pode passar de 1,5 mm: a chave vermelha fica logo acima da
+  pilha.</li>
 </ol>
-{tabela_chaves()}
-<div class="nota">Na primeira chave, confira com o multímetro em continuidade antes de soldar: sem apertar, ele apita entre as duas
-perninhas de cima (e entre as duas de baixo); apertando, apita também entre a de cima e a de baixo.</div>""",
-        ["As 14 chaves estão retas e encostadas na placa.",
-         "Atrás, nenhuma perninha passa de 1 mm.",
-         "As perninhas que se ligam por dentro estão à esquerda e à direita de cada chave."]))
+<div class="nota">C1 e C2 seguram a alimentação da tela. C4 e C5 são um reforço contra a tela branca nas ligações. Se você não
+tiver o de 100 pF, deixe o lugar do C4 vazio: funciona sem ele.</div>""",
+        ["C2 está com o + no furo quadrado.",
+         "Os capacitores estão na face de trás e as chaves na da frente.",
+         "Atrás da placa, nenhuma perna passa de 1,5 mm."]))
 
-    passos.append(passo(4, "matriz", "A matriz atrás", "antes de juntar com a LILYGO · 45 minutos", f"""
-<p>Atrás, as teclas viram uma matriz de 4 fileiras e 3 colunas. As fileiras ligam as perninhas de cima das 3 teclas de cada fila. As
-colunas ligam as perninhas de baixo das 4 teclas de cada coluna por um fio nu que desce entre elas, nas colunas C, I e O da placa.
-Use fio nu fino, como perna de resistor cortada, deitado na placa e soldado nos furos.</p>
-{figura([tras_a], "Atrás, antes de juntar (a vista é espelhada: a coluna A fica à direita). As manchas vermelhas e laranja são as peças da LILYGO que ficarão logo atrás desta placa, com a altura em mm: os fios passam pelo vale da coluna O, onde as peças são baixas.")}
-{tabela_matriz()}
-<div class="aviso">Tudo atrás fica deitado, com no máximo 1,2 mm de altura: a LILYGO vai ficar a {mm(P.VAO, 2)} mm, e embaixo das
-teclas estão a lata do modem e o suporte do chip.</div>""",
-        ["Os 8 fios nus das fileiras (E–H e K–N nas linhas 36, 40, 44 e 48) estão soldados.",
-         "Os fios nus das colunas C, I e O descem da linha 38 à 50, com as 12 pontes até as perninhas.",
-         "O fio nu E32–N32 liga as perninhas de cima do verde e do vermelho.",
-         "Nada atrás passa de 1,2 mm de altura."]))
-
-    passos.append(passo(5, "direita", f"Os {n_dir} fios da direita", "antes de juntar · 45 minutos", f"""
-<p>Sete fios encapados (30 AWG) levam as linhas do teclado e o botão vermelho até a barra da direita da LILYGO. Eles sobem juntos
-pela coluna O, onde as peças da LILYGO embaixo são baixas, e viram para a direita na linha do pino. Cada fio <b>atravessa o furo
-Q</b> e fica com 1 cm para fora, na frente: depois de juntar, ele vai ser soldado no pino da barra R, ao lado.</p>
-{tabela_fios("direita")}
-<p>Os furos de passagem são só o caminho, por trás: o fio passa por cima deles, sem entrar nem ser soldado. Deixe os 7 fios
-lado a lado, deitados, e prenda o maço na placa com tiras de Kapton (cola quente fica alta demais aqui).</p>""",
-        ["Os 7 fios começam nas perninhas certas (tabela) e saem 1 cm pela frente em Q16 a Q22.",
-         "O maço está deitado na coluna O, sem cruzar por cima de outro maço."]))
-
-    passos.append(passo(6, "multimetro", "Teste com o multímetro", "antes de juntar · 10 minutos", f"""
-<p>Depois de juntar, o lado de trás fica entre as placas e não dá mais para consertar. Teste agora: multímetro em continuidade
-(o que apita), uma ponta em cada ponto da tabela. Apertando a tecla tem que apitar; soltando, não.</p>
-{tabela_teste()}
-<p>Sem apertar nada, nenhum par de pontas pode apitar: nem duas de Q16 a Q22 entre si, nem uma delas com C38 ou B32.</p>""",
-        ["As 14 teclas apitam só quando apertadas.",
-         "Sem apertar, nada apita entre Q16, Q17, Q18, Q19, Q20, Q21, Q22, C38 e B32."]))
-
-    passos.append(passo(7, "juntar", "Juntar com a LILYGO", "30 minutos", f"""
-<p>Depois de juntar, o lado dos componentes da LILYGO fica coberto. Antes, faça as duas coisas que ficam lá dentro:</p>
+    passos.append(passo(3, "tela", "A tela", "20 minutos", f"""
+<p>A tela é soldada na PCB pelos pinos dela, com os pinos para baixo: a posição normal. O plástico amarelo dos pinos
+encosta na PCB e serve de calço. Só os 9 primeiros pinos são usados; os outros 5 são do toque, que esta tela não tem.</p>
 <ol class="faz">
-  <li><b>O chip</b>: ponha o nano-SIM no suporte, se ainda não estiver lá. Ele entra pela borda esquerda da LILYGO. Depois de juntar
-  ainda dá para tirar e pôr com a pinça, por baixo da faixa da esquerda da placa, mas fica apertado.</li>
-  <li><b>A antena</b>: encaixe o cabo dela no conector LTE da LILYGO, o conectorzinho redondo no meio da ponta do modem (aperte
-  reto até fazer clic). Vire o cabo para a esquerda, rente à ponta da placa: ele vai sair entre as placas pela borda esquerda
-  da LILYGO. A antena fica solta até o passo 12.</li>
-  <li>Encaixe a placa nos pinos da LILYGO: os pinos entram por trás nas colunas F e R, linhas 9 a 24. As teclas ficam para fora e o
-  ESP32 da LILYGO fica do lado de cima (perto da linha 1); os USB-C ficam à direita, olhando de frente.</li>
-  <li>Aperte uma placa contra a outra (os dois plásticos encostados) e solde só os 4 pinos dos cantos: <span class="furo">F9</span>,
-  <span class="furo">F24</span>, <span class="furo">R9</span> e <span class="furo">R24</span>. Confira que as placas estão paralelas.</li>
-  <li>Solde os outros 28. Corte as sobras deixando 1 mm: a tela vai deitar por cima.</li>
+  <li><b>Corte 4 pinos da tela</b>: contando a partir do VCC, o 10º, o 11º, o 12º e o 13º (T_CLK, T_CS, T_DIN e T_DO). Corte
+  rente ao plástico amarelo. Eles cairiam bem em cima da pilha. O último pino (T_IRQ) fica.</li>
+  <li>Encaixe a tela pela frente da PCB, na fileira de furos de cima. O VCC entra no furo quadrado, marcado com
+  <b>1</b>. Os toquinhos dos 4 pinos cortados entram nos 4 furos marcados com X. O vidro fica virado para você.</li>
+  <li>Segure a tela reta, com o plástico amarelo encostado na PCB, e solde atrás os 10 pinos: do 1 ao 9 e o último.
+  <b>Nos 4 furos com X não vai solda.</b></li>
+  <li>Corte as sobras atrás, deixando no máximo 1,5 mm.</li>
+  <li>Cole um pedaço de fita isolante atrás da PCB, por cima dos 4 furos sem solda.</li>
+</ol>
+<div class="aviso">Daqui em diante, pegue o conjunto pela PCB, não pela tela: ela fica presa só pelos pinos até entrar na caixa,
+onde a ponta de cima apoia em duas torres.</div>""",
+        ["Os 4 pinos foram cortados e nada aparece nos furos com X, atrás da PCB.",
+         "O VCC da tela está no furo quadrado (1).",
+         "A tela está reta, com o plástico amarelo encostado na PCB.",
+         "Atrás, os pinos soldados não passam de 1,5 mm."]))
+
+    passos.append(passo(4, "barras", "As barras fêmea", "20 minutos · sem pilha", f"""
+<p>As barras são soldadas com tudo no lugar. Assim a PCB fica na altura certa, apoiada nos pilares do fundo, qualquer que seja
+o comprimento das pernas.</p>
+<ol class="faz">
+  <li>Ponha a LILYGO no fundo impresso, com as barras fêmea encaixadas e <b>sem a pilha</b>. A ponta da ESP32 fica para baixo
+  (o lado do microfone) e os USB-C, para a direita. Dois pilares do fundo têm pino, que entra nos furos dela. Os parafusos
+  ficam para o passo 6.</li>
+  <li>Desça a PCB: as 32 pernas entram nas duas fileiras de furos (J1 e J2). A PCB apoia nos três pilares da esquerda e nas
+  nervuras de baixo e da direita. A ponta de cima da tela apoia nas duas torres, ao lado do lugar do alto-falante.</li>
+  <li>Solde, pela frente, a <b>primeira e a última perna de cada barra</b>: 4 soldas. Cuidado para não encostar o ferro na
+  borda da caixa.</li>
+  <li>Tire tudo do fundo e separe a PCB da LILYGO, puxando reto: as barras saem presas na PCB. Solde as outras 28 pernas na
+  bancada.</li>
+  <li>Corte as 32 pernas rente à PCB: o teclado vai por cima delas.</li>
+  <li>Cole uma tira de fita isolante por cima de cada fileira de soldas.</li>
 </ol>""",
-        ["O chip está no suporte e a antena, encaixada, com o cabo saindo pela esquerda.",
-         "As placas estão paralelas, com os plásticos encostados nas duas.",
-         "Os 32 pinos estão soldados na frente e cortados a 1 mm.",
-         "As 7 pontas dos fios continuam saindo em Q16 a Q22."]))
+        ["A PCB estava assentada nos pilares e a tela, nas torres, quando as 4 primeiras pernas foram soldadas.",
+         "As 32 pernas estão soldadas e cortadas rente.",
+         "As duas fileiras de soldas estão cobertas com fita isolante."]))
 
-    passos.append(passo(8, "pontes", "As pontes da direita", "15 minutos", f"""
-<p>Na frente, dobre cada ponta que sai de Q16 a Q22 até encostar no pino da barra ao lado, na coluna R, e solde junto: uma ponte de
-solda Q–R por linha. Corte a sobra.</p>
-{alterna_tela()}
-<div data-tela-mostra="normal">{figura([frente_n], "A frente: as chaves, os pinos da LILYGO (os nomes em negrito são os usados) e as pontes de solda (em cinza claro, com a cor do fio que chega). A tela entra por último, por cima de tudo.")}</div>
-<div data-tela-mostra="espelhada" hidden>{figura([frente_e], "A frente, para a tela com o VCC à direita: só os pinos da tela mudam de ordem.")}</div>""",
-        ["Q16–R16, Q17–R17, Q18–R18, Q19–R19, Q20–R20, Q21–R21 e Q22–R22 estão em ponte.",
-         "Nenhuma ponte encosta na vizinha de cima ou de baixo."]))
-
-    passos.append(passo(9, "esquerda", "Os fios da esquerda", "1 hora", f"""
-<p>A faixa da esquerda, colunas A a D, fica fora da LILYGO: atrás dela ainda dá para soldar depois de juntar. Ali passam
-{n_esq} fios: os 9 da tela, o do botão verde, o GND dos botões e o da coluna 1 4 7 *. Cada fio entra por trás num furo da coluna E
-(o GND, na D) e, na frente, é dobrado até o pino da barra F ao lado e soldado junto, como na direita.</p>
+    passos.append(passo(5, "teclado", "O teclado", "20 minutos", f"""
+<p>O teclado entra inteiro, sem abrir. Ele fica colado na PCB com fita dupla face de espuma, e a aba verde dos contatos se liga
+à PCB por 7 perninhas de fio.</p>
 <ol class="faz">
-  <li>Os 3 de baixo: solde a ponta atrás nas perninhas (<span class="furo">B34</span>, <span class="furo">B32</span>) e no fio nu da
-  coluna C (<span class="furo">C38</span>); suba pela coluna A e entre no furo da tabela.</li>
-  <li>Os 9 da tela: comece pela ponta de baixo (entra no furo E, ponte com o F na frente) e leve o fio pelo caminho da tabela até a
-  linha 1. Corte com 5 mm a mais além do furo da linha 1 de onde vai sair o pino dele: essa ponta fica solta até o passo 10.</li>
-  <li>Na linha 10, a ponte junta três furos: <span class="furo">D10</span>–<span class="furo">E10</span>–<span class="furo">F10</span>
-  (os dois fios de GND e o pino GND da LILYGO).</li>
+  <li>Cole a fita de espuma nos dois retângulos marcados FITA DE ESPUMA e tire o papel de cima.</li>
+  <li>Segure o teclado acima da PCB, sem encostar, com a aba verde para baixo, sobre a língua da PCB. Acerte a posição: a
+  borda de cima do teclado fica na linha marcada <b>BORDA DE CIMA DO TECLADO</b> e os lados ficam rentes às bordas da PCB. Os
+  9 furos da aba caem em cima dos 9 furos da PCB.</li>
+  <li>Encoste e aperte para colar. A fita não deixa corrigir depois.</li>
+  <li>Passe uma perninha de fio nu (uns 8 mm; perna de resistor serve) em cada um dos <b>7 furos do meio</b>, atravessando a
+  aba e a PCB. Solde em cima, na aba, e embaixo, atrás da PCB. Corte as sobras.</li>
 </ol>
-{alterna_tela()}
-<div data-tela-mostra="normal">{figura([tras_d_n], "Atrás, depois de juntar (espelhada). A LILYGO tapa quase tudo; os fios ficam na faixa da esquerda e na ponta de cima. O alto-falante fica embaixo das linhas 4 a 6, da coluna D para a direita: ali não passa fio.")}{tabela_fios("esquerda")}</div>
-<div data-tela-mostra="espelhada" hidden>{figura([tras_d_e], "A mesma vista para a tela com o VCC à direita: os fios são os mesmos, só saem de outras colunas.")}{tabela_fios("esquerda", True)}</div>""",
-        ["Os 3 fios de baixo estão soldados atrás e em ponte na frente (E16–F16, E18–F18, D10–E10–F10).",
-         "Os 9 fios da tela estão em ponte na frente (E9, E10, E12, E13, E14, E15, E21, E22, E23 com o F ao lado).",
-         "Nenhum fio passa por cima da LILYGO, nem nas linhas 4 a 6 da coluna D para a direita."]))
+<div class="nota">Os dois furos das pontas não ligam em nada: pode soldar também, só para firmar. A ordem dos 7 fios não
+importa, porque o Tijolo aprende qual é qual (passo 7).</div>""",
+        ["A borda de cima do teclado está na linha da PCB e os lados, rentes às bordas.",
+         "As 7 perninhas do meio estão soldadas na aba e atrás da PCB.",
+         "Nenhuma perninha encosta na vizinha."]))
 
-    passos.append(passo(10, "tela", "A tela", "40 minutos", f"""
+    passos.append(passo(6, "som", "Alto-falante, microfone e antena", "40 minutos", f"""
+<p>Os três ficam no fundo da caixa. O desenho em <a href="#cabos">Cabos e fios</a> mostra o lugar de cada um e o caminho dos
+cabos.</p>
 <ol class="faz">
-  <li>Confira a <a href="#conferir">conferência B</a> (de que lado fica o VCC) e use a vista certa nos passos 8 a 10.</li>
-  <li>Encaixe os 14 pinos da tela na linha 1, de <span class="furo">C1</span> a <span class="furo">P1</span>, pela frente. A tela fica
-  deitada sobre o plástico da barra, encostado na placa. Solde atrás os 14 (os 5 do toque não ligam em nada, só seguram).</li>
-  <li>Atrás, solde a ponta de cada fio no pino dele, rente à placa.</li>
-  <li>Os capacitores, entre o pino VCC e o GND da tela, também rente à placa: o de 100 nF deitado entre os dois pinos; o de 100 µF
-  com a perninha mais curta (a do lado da faixa clara) no GND. Ele fica em pé, com o corpo apontando para o fundo da caixa, e todo
-  entre a borda de cima da placa e a linha 4: acima da borda desce a lingueta da frente, e abaixo da linha 4 fica o alto-falante.
-  Dobre as perninhas para o corpo ficar uns 2 mm mais para baixo que os pinos. Deitado ele não cabe.</li>
-  <li>Se você chegou a testar os cerâmicos do diagnóstico da tela branca (README, "Atacar a causa"), eles também vão aqui, nos
-  pinos: 100 nF entre o RESET e o GND, e 100 pF (ou 1 nF) junto do de 100 nF do VCC.</li>
-  <li>Corte as sobras dos 14 pinos a uns 2 mm da placa (só os pinos, não as perninhas dos capacitores).</li>
-  <li>Opcional: um quadradinho de espuma adesiva de 2 mm na placa, embaixo da ponta de baixo da tela, num ponto onde atrás da tela
-  não há peça. Ele apoia a tela quando você aperta o vidro.</li>
-</ol>
-{alterna_tela()}
-<div data-tela-mostra="normal">{tabela_tela()}</div>
-<div data-tela-mostra="espelhada" hidden>{tabela_tela(True)}</div>
-{figura([corte], "O corte de lado da montagem dentro da caixa, em escala.", corte=True)}""",
-        ["Os 14 pinos da tela estão soldados, com a tela paralela à placa.",
-         "Os 9 fios estão nos pinos certos (tabela), e os capacitores, entre VCC e GND.",
-         "O capacitor de 100 µF está em pé, entre a borda de cima da placa e a linha 4."]))
-
-    passos.append(passo(11, "firmware", "Firmware e primeiro teste", "15 minutos · com a pilha e o USB", f"""
-<ol class="faz">
-  <li>No <code>include/config.h</code>, mude para <code>#define MONTAGEM_PLACA 1</code> e grave o firmware. Isso troca os pinos: a
-  coluna 1 4 7 * vai no IO17, o verde no IO35 e o vermelho no IO21.</li>
-  <li>Ensine o teclado: segure o 1 enquanto aparece "Ligando o modem…" (ou mande <code>teclado aprender</code> no Monitor Serial) e
-  aperte as teclas que a tela pedir.</li>
-  <li>Teste: o verde liga, o vermelho encerra. Segurado, o vermelho desliga o Tijolo; segurado de novo por 1 s, liga.</li>
+  <li><b>Antena.</b> Cole a antena na parede da esquerda, por dentro, no rebaixo raso, com o cabo saindo por cima. Encaixe a
+  ponta do cabo no conector <b>LTE</b> da LILYGO: fica do lado dos componentes, na ponta do modem. Aperte reto até fazer
+  clic.</li>
+  <li><b>Alto-falante.</b> O conector que vem nele não serve na LILYGO. Corte o conector e emende os dois fios num cabo JST SH
+  1.0, deixando uns 6 cm no total. Isole as emendas com fita isolante. Ponha o alto-falante em pé na calha de cima, com a
+  frente virada para a grade.</li>
+  <li><b>Microfone.</b> Encaixe um cabo JST SH 1.0 no conector MIC e veja qual fio cai no pino marcado com + na placa. Esse
+  fio vai no terminal positivo do microfone: o que <b>não</b> está ligado à carcaça. O outro vai no terminal da carcaça. O
+  caminho pede uns 15 cm e o cabo tem 10: emende 6 cm de fio no meio. Deite o microfone no berço de baixo, com a face de feltro
+  virada para os três furinhos.</li>
+  <li>Ponha a LILYGO no fundo, descendo reto nos dois pinos, e aperte os 2 parafusos M2 × 5 nos outros dois pilares, só até
+  encostar. O cabo da antena dá a volta pela ponta de cima da placa.</li>
+  <li>Encaixe os cabos nos conectores <b>SPEK</b> e <b>MIC</b>, do lado da pilha. Os cabos correm pelo vão da esquerda.</li>
+  <li>Ponha a chave liga/desliga em <b>ON</b>. Na LILYGO está escrito ON e OFF ao lado dela, do lado da pilha.</li>
 </ol>""",
-        ["A tela acende com a imagem certa (se ficar de cabeça para baixo, TELA_ROTACAO = 2 no config.h).",
-         "As 12 teclas e os 2 botões funcionam.",
-         "O vermelho segurado desliga o Tijolo e, segurado de novo, liga."]))
+        ["A antena está colada na parede e encaixada no conector LTE (não no GNSS).",
+         "O alto-falante está na calha, virado para a grade, e o cabo dele no SPEK.",
+         "O fio do + do conector MIC está no terminal do microfone que não toca a carcaça.",
+         "Nenhum cabo passa por cima dos pilares nem das torres."]))
 
-    passos.append(passo(12, "fechar", "Fechar a caixa", "15 minutos", f"""
+    passos.append(passo(7, "juntar", "Juntar e testar", "30 minutos · com a pilha", f"""
+<div class="aviso">Confira a antena antes de pôr a pilha: o modem não pode ligar sem ela.</div>
 <ol class="faz">
-  <li><b>Antena</b>: tire o papel da fita e cole na parede da esquerda, por dentro, no rebaixo de 0,3 mm. O cabo já está na
-  LILYGO (passo 7); acomode a sobra embaixo da faixa da esquerda da placa.</li>
-  <li><b>Alto-falante</b>: em pé no berço de cima, com o cone virado para a grade da parede de cima.</li>
-  <li><b>Microfone</b>: deitado no berço de baixo, com a face de feltro contra os três furinhos.</li>
-  <li>Encaixe os cabos do alto-falante e do microfone nos conectores SPEK e MIC, do lado da pilha da LILYGO, perto da ponta do
-  modem. O do alto-falante desce pela esquerda, ao lado do suporte da pilha, e precisa de uns 12 cm: se o seu ficou curto, emende.</li>
-  <li>Baixe o sanduíche reto: os 4 pilares do fundo entram nos furos da LILYGO.</li>
-  <li>Baixe a frente reta: as duas linguetas de cima fazem clic. Aperte os 2 parafusos M2 × 8 por trás, embaixo.</li>
+  <li>Ponha a pilha no suporte, conferindo o + e o − gravados nele.</li>
+  <li>Encaixe o conjunto da PCB (com a tela e o teclado) nos pinos da LILYGO. Desça reto e aperte sobre o teclado, sem
+  pressa, até a PCB assentar nos pilares e a ponta da tela, nas torres.</li>
+  <li>No arquivo <code>include/config.h</code>, troque para <code>#define MONTAGEM_PLACA 2</code> e grave o firmware pelo
+  USB-C da abertura da direita.</li>
+  <li>Ensine o teclado: segure o 1 enquanto aparece "Ligando o modem…" e aperte as teclas que a tela pedir. (Ou mande
+  <code>teclado aprender</code> no Monitor Serial.)</li>
+  <li>Teste antes de fechar: as 12 teclas, o verde e o vermelho, uma ligação (para ouvir e falar) e uma mensagem.</li>
 </ol>
-<div class="nota">Para abrir: tire os 2 parafusos, levante a frente por baixo e puxe firme para soltar as linguetas. A chave
-liga/desliga da LILYGO fica por dentro: no dia a dia o vermelho desliga; para guardar por muitos dias, abra e desligue a chave.</div>""",
-        ["A antena está colada e o cabo dela não ficou preso entre as peças.",
-         "Os cabos do alto-falante e do microfone estão encaixados.",
-         "As linguetas fizeram clic e os 2 parafusos estão apertados sem forçar.",
-         "O cabo USB-C entra até o fim pela abertura da direita (é o USB da ESP32, o de gravar e carregar).",
-         "Com a caixa fechada, numa ligação a tela apaga um instante e volta (o normal do Tijolo na troca 4G ↔ 2G), sem ficar branca."]))
+<div class="nota">O vermelho segurado desliga o Tijolo; segurado de novo por 1 segundo, liga. A chave da LILYGO só precisa ser
+desligada para guardar o Tijolo por muitos dias: ela fica atrás, na fenda com ON e OFF, e se mexe com um palito.</div>""",
+        ["A tela acende com a imagem em pé.",
+         "As 12 teclas e os 2 botões respondem.",
+         "Numa ligação, você ouve e é ouvido."]))
 
-    medidas_campos = P.MEDIDAS
+    passos.append(passo(8, "fechar", "Fechar", "10 minutos", f"""
+<ol class="faz">
+  <li>Ponha os dois botões impressos nos poços da frente, por dentro: o verde do lado esquerdo de quem olha o Tijolo de frente.
+  Prenda cada um com um pedacinho de fita por fora, só para não caírem.</li>
+  <li>Desça a frente reta sobre o fundo. As duas linguetas de cima entram por dentro da parede e fazem clic. O teclado passa pela
+  abertura.</li>
+  <li>Aperte os 2 parafusos M2 × 8 por trás, embaixo, sem forçar. Tire as fitas dos botões.</li>
+</ol>
+<div class="nota">Para abrir: tire os 2 parafusos, levante a frente por baixo e puxe para soltar as linguetas. Para trocar a
+pilha, puxe o conjunto da PCB reto para cima: ele desencaixa dos pinos e a LILYGO fica presa no fundo.</div>""",
+        ["As linguetas fizeram clic e não sobrou fresta em cima.",
+         "Os dois botões fazem clic quando apertados e voltam sozinhos.",
+         "O cabo USB-C entra até o fim pela abertura da direita."]))
+
+    # ------------------------------------------------------------------ as medidas para conferir
+    assert len(P.MEDIDAS) == 8                   # o texto diz "oito"
     campos_html = "".join(
-        f"<div class='campo'><label for='m-{i}'>{esc(t)}{f'<span class=pequeno>{esc(d)}</span>' if d else ''}</label>"
-        f"<input id='m-{i}' name='{i}' value='{esc(v)}' inputmode='decimal' autocomplete='off'></div>"
-        for i, t, d, v in medidas_campos)
+        f"<div class='campo'><label for='m-{i}'>{esc(t)}<span class='pequeno'>no projeto: {esc(v)} · serve: {esc(faixa)}</span></label>"
+        f"<input id='m-{i}' name='{i}' placeholder='sua medida' inputmode='decimal' autocomplete='off'></div>"
+        for i, t, v, faixa, fonte in P.MEDIDAS)
+
+    medidas_revisadas = tabela(
+        ["Peça", "O que eu uso", "Conferido com"],
+        [("LILYGO",
+          f"placa de {mm(P.L.largura, 2)} × {mm(P.L.altura, 2)} × {mm(P.L.espessura)} mm; as duas barras de 16 pinos a "
+          f"{mm(P.L.barra_x[1] - P.L.barra_x[0], 2)} mm uma da outra, com o plástico do lado da pilha; 4 furos de Ø "
+          f"{mm(P.L.furo_fixacao_d, 2)}; USB-C com {mm(P.L.usb_altura, 2)} mm de altura; conector SOLAR com 6,25 (por isso sai)",
+          "modelo 3D oficial, desenho com cotas (DXF) e foto oficial do lado da pilha"),
+         ("Pilha no suporte",
+          f"suporte com {mm(P.L.suporte_altura)} mm; o topo da pilha fica entre 18,1 e 18,9 mm da placa; reservei "
+          f"{mm(P.L.pilha_altura)}",
+          "modelo 3D oficial; <b>falta a sua régua</b>"),
+         ("Tela 2,4\"",
+          f"plaquinha de {mm(P.T.largura, 2)} × {mm(P.T.altura, 2)} mm; os pinos embaixo, a {mm(P.T.pinos_v, 2)} mm da borda, com "
+          f"o VCC à esquerda; vidro de {mm(P.T.vidro_v[0], 2)} a {mm(P.T.vidro_v[1], 2)} mm; imagem de "
+          f"{mm(P.T.imagem_u[1] - P.T.imagem_u[0], 2)} × {mm(P.T.imagem_v[1] - P.T.imagem_v[0], 2)} mm; soquete do cartão SD "
+          f"atrás, com {mm(P.T.sd_altura)} mm",
+          "desenho do fabricante (LCDWiki MSP2401)"),
+         ("Teclado 3×4",
+          f"corpo de {mm(P.K.largura)} × {mm(P.K.altura)} mm; aba de {mm(P.K.aba[0])} × {mm(P.K.aba[1])} mm com 9 furos a 2,54; "
+          f"{mm(P.K.espessura)} mm de espessura",
+          "foto com cotas do anúncio e ficha da Adafruit 3845; <b>falta a sua régua</b>"),
+         ("Alto-falante e microfone",
+          f"{mm(P.FALANTE[0], 0)} × {mm(P.FALANTE[1], 0)} mm, até {mm(P.FALANTE[2], 0)} de espessura; Ø {mm(P.MIC_D)} × "
+          f"{mm(P.MIC_L)} mm",
+          "os nomes das peças (3525 e 9767); <b>falta a sua régua</b>")])
+
+    camadas = tabela(
+        ["Montagem", "Espessura", "Fios soltos"],
+        [("Placa ilhada e fios (o desenho anterior)", f"{mm(ANTES['espessura'])} mm", str(ANTES["fios"])),
+         {"classe": "total", "celulas": ("<b>PCB da frente (esta)</b>", f"<b>{mm(P.Z_TOPO)} mm</b>", "<b>nenhum</b>")},
+         ("PCB e bateria chata no lugar da 18650", f"uns {mm(sem_suporte, 0)} mm", "nenhum")],
+        ["", "num", "num"])
+
+    comprar = tabela(
+        ["Peça", "Quantas", ""],
+        [(f"<b>PCB da frente</b> ({mm(PCB_L)} × {mm(PCB_A)} mm, 2 camadas, <b>0,8 mm</b>): veja <a href='#pcb'>Encomendar a PCB</a>",
+          "5 (o mínimo)", "<span class='comprar'>encomendar</span>"),
+         (f"<b>Barra fêmea de perna longa</b> (\"empilhável\", a dos shields de Arduino), 2,54 mm, 1 × 16. Perna de "
+          f"{mm(z_perna)} mm ou mais: as de 11 e de 12 mm servem. Quatro de 1 × 8 também servem.",
+          "2", "<span class='comprar'>comprar</span>"),
+         ("<b>Fita dupla face de espuma</b>, de 1 a 1,5 mm de espessura", "20 cm", "<span class='comprar'>comprar</span>"),
+         ("Capacitor cerâmico de 100 pF (C4, opcional)", "1", "<span class='comprar'>se quiser</span>"),
+         ("Fita isolante comum (ou Kapton)", "um pouco", "<span class='comprar'>se não tiver</span>"),
+         ("Impressão 3D: fundo, frente e dois botões: veja <a href='#imprimir'>Imprimir a caixa</a>", "1 jogo",
+          "<span class='comprar'>encomendar</span>"),
+         ("Chave táctil 6 × 6 × 5 mm (kit Eletrogate)", "2", "<span class='tem'>tem</span>"),
+         ("Capacitores: 100 µF e 100 nF (kit Eletrogate)", "1 + 2", "<span class='tem'>tem</span>"),
+         ("Parafusos M2 de cabeça chata: 2 de 8 mm (fechar a caixa) e 2 de 5 mm (prender a LILYGO). Veja se o seu kit "
+          "sortido tem esses comprimentos.", "4", "<span class='tem'>tem</span>"),
+         ("Cabo JST SH 1.0 de 2 vias (alto-falante e microfone)", "2", "<span class='tem'>tem</span>"),
+         ("Fio 30 AWG (emenda do microfone) e pernas de resistor (aba do teclado)", "um pouco", "<span class='tem'>tem</span>"),
+         ("Teclado 3×4, tela 2,4\", alto-falante 3525, microfone 9767, antena 4G, pilha 18650", "", "<span class='tem'>tem</span>")])
+
+    imprimir = tabela(
+        ["Arquivo", "O que é", "Como imprimir"],
+        [("<span class='mono'>fundo.stl</span>", f"a metade de trás ({mm(LARGURA)} × {mm(COMPRIMENTO)} × {mm(P.Z_TELA - 0.05)} mm)",
+          "a face de trás na mesa; sem suporte"),
+         ("<span class='mono'>frente.stl</span>", "a metade da frente, com a janela da tela e a abertura do teclado",
+          "a face da frente na mesa (já está virada); sem suporte"),
+         ("<span class='mono'>botao_verde.stl</span>", "o botão verde (✓)", "em pé, como está; filamento verde, ou pinte"),
+         ("<span class='mono'>botao_vermelho.stl</span>", "o botão vermelho (✕)", "em pé, como está; filamento vermelho, ou pinte")])
+
+    cabos = tabela(
+        ["Ligação", "Com o quê", "Comprimento"],
+        [("Alto-falante → conector SPEK", "cabo JST SH 1.0, emendado nos dois fios do alto-falante", "uns 6 cm"),
+         ("Microfone → conector MIC", "cabo JST SH 1.0 soldado no microfone, com 6 cm de fio 30 AWG emendados no meio", "uns 15 cm"),
+         ("Antena 4G → conector LTE", "o cabo que já vem na antena", "o que vier"),
+         ("Aba do teclado → PCB", "7 perninhas de fio nu (pernas de resistor)", "8 mm cada"),
+         ("Tela, botões e teclado → LILYGO", "trilhas da PCB e as duas barras de 16 pinos", "nenhum fio"),
+         ("Carregar e gravar", "cabo USB-C comum, pela abertura da direita", "")])
 
     corpo = f"""
 <title>Montagem do Tijolo</title>
@@ -592,130 +655,152 @@ liga/desliga da LILYGO fica por dentro: no dia a dia o vermelho desliga; para gu
 <nav class="indice" aria-label="Índice">{nav}</nav>
 <main>
 <header>
-  <div class="eyebrow">Tijolo · Fase 4 · montagem</div>
+  <div class="eyebrow">Tijolo · montagem com a PCB da frente</div>
   <h1>Montagem do Tijolo</h1>
-  <p class="lead">Uma placa ilhada na frente, com as 14 teclas e a tela, encaixada direto nas barras de pinos da LILYGO. Na frente
-  da placa não corre nenhum fio: só pontes de solda. Os fios ficam atrás, curtos e escondidos, e a caixa impressa em 3D fecha tudo.</p>
+  <p class="lead">Uma PCB encomendada encaixa direto nos pinos da LILYGO e leva a tela, os dois botões e a ligação do teclado.
+  Sobram dois cabos, o do alto-falante e o do microfone, e a antena. A caixa impressa em 3D fecha tudo.</p>
   <ul class="fichas">
-    <li>placa 18 × 51 furos</li><li>{len(F.CHAVES)} chaves tácteis</li><li>{n_dir + n_esq} fios, todos atrás</li>
-    <li>caixa {mm(larg_caixa)} × {mm(comp_caixa)} × {mm(P.Z_TOPO)} mm</li><li>6 a 8 horas de bancada</li>
+    <li>caixa {mm(LARGURA)} × {mm(COMPRIMENTO)} × {mm(P.Z_TOPO)} mm</li><li>PCB {mm(PCB_L)} × {mm(PCB_A)} mm · 0,8 mm</li>
+    <li>2 cabos e a antena</li><li>7 perninhas de fio</li><li>umas 3 horas de bancada</li>
   </ul>
   <div class="vista" id="vista">
-    <img src="capa.png" alt="O Tijolo montado, visto de frente e de lado: a tela em cima e o teclado embaixo." id="vista-capa">
+    <img src="capa.png" alt="O Tijolo montado, visto de frente e de lado: a tela em cima, os botões verde e vermelho e o teclado embaixo." id="vista-capa">
     <div class="dica" id="vista-dica" hidden>arraste para girar</div>
     <div class="controles" id="vista-controles" role="group" aria-label="Vista 3D" hidden>
       <button class="chip" type="button" data-modo="fechado" aria-pressed="true">Fechado</button>
-      <button class="chip" type="button" data-modo="aberto" aria-pressed="false">Aberto</button>
+      <button class="chip" type="button" data-modo="aberto" aria-pressed="false">Sem a frente</button>
+      <button class="chip" type="button" data-modo="dentro" aria-pressed="false">Só o fundo e a LILYGO</button>
       <button class="chip" type="button" data-modo="corte" aria-pressed="false">Cortado ao meio</button>
     </div>
   </div>
-  <p class="pequeno">A caixa em 3D. Em "Aberto" e "Cortado ao meio" aparece o miolo, em blocos simples: a LILYGO, a placa da
-  frente com as chaves, a tela, a pilha, o alto-falante e o microfone.</p>
+  <p class="pequeno">A caixa em 3D. O miolo aparece em blocos simples: a LILYGO com a pilha, a PCB da frente, a tela, o teclado, o
+  alto-falante e o microfone.</p>
 </header>
 
-<h2 id="conferir">Antes de começar: três conferências</h2>
-<p>As três decidem detalhes da montagem. Olhe as peças agora, antes de comprar e de soldar.</p>
-<h3>A. As barras de pinos da LILYGO</h3>
-<ul>
-  <li><b>Ainda soltas</b>: ótimo, elas vão soldadas no passo 1.</li>
-  <li><b>Soldadas com o plástico do lado dos componentes</b> (o lado do ESP32 e do modem), pinos compridos para cima: ótimo, falta só
-  o segundo plástico.</li>
-  <li><b>Soldadas com o plástico do lado da pilha</b>: precisam sair. Corte o plástico entre os pinos com o alicate de corte, aqueça
-  e puxe um pino de cada vez com a pinça, limpe os furos com a malha e solde barras novas do jeito certo.</li>
-</ul>
-<h3>B. De que lado fica o VCC da tela</h3>
-<p>Vire a tela e leia os nomes da fileira de pinos, atrás da plaquinha: o <b>VCC</b> fica numa das pontas. Depois desvire: olhando a
-tela de frente, com os pinos em cima, de que lado ficou o VCC? Os fios são os mesmos nas duas montagens, só saem de outras colunas.
-Escolha aqui; os desenhos e as tabelas dos passos 8 a 10 seguem a escolha.</p>
-{alterna_tela()}
-<h3>C. O cartão micro SD atrás da tela</h3>
-<p>A tela fica a {mm(P.T.espaco, 2)} mm da placa (um plástico de barra). Embaixo dela, a placa só tem soldas baixas, longe do meio. Se a
-peça mais alta atrás da tela passar de 2,3 mm, ou se o cartão SD ficar perto dos pinos e não na outra ponta, me avise: a tela passa
-a usar dois plásticos e a caixa fica 2,5 mm mais grossa.</p>
-
-<h2 id="comprar">O que comprar</h2>
-<div class="rolagem"><table>
-<thead><tr><th>Peça</th><th>Quantas</th><th></th></tr></thead>
-<tbody>
-<tr><td>Placa ilhada <b>dupla face, furos metalizados</b>, 9 × 15 cm ou maior (precisa de 18 × 51 furos)</td><td>1</td><td class="comprar">comprar</td></tr>
-<tr><td>Chave táctil 6 × 6 × 5 mm, 4 terminais (todas iguais)</td><td>14 (+ sobra)</td><td class="comprar">comprar</td></tr>
-<tr><td>Barra de pinos macho 1 × 40, 2,54 mm (para os dois plásticos extras)</td><td>1</td><td class="comprar">comprar</td></tr>
-<tr><td>Fita Kapton, 10 mm</td><td>1 rolo</td><td class="comprar">comprar</td></tr>
-<tr><td>Multímetro com bip de continuidade</td><td>1</td><td class="comprar">se não tiver</td></tr>
-<tr><td>Fio 30 AWG (você tem o de silicone em 3 cores; mais cores ajudam a seguir as tabelas)</td><td>~2 m</td><td class="tem">tem</td></tr>
-<tr><td>Fio nu fino: pernas de resistor cortadas</td><td>~30 cm</td><td class="tem">tem</td></tr>
-<tr><td>Capacitores de 100 nF e 100 µF (kit Eletrogate)</td><td>1 + 1</td><td class="tem">tem</td></tr>
-<tr><td>Parafusos M2 × 8, cabeça chata (sortidos)</td><td>2</td><td class="tem">tem</td></tr>
-<tr><td>Impressão 3D: fundo, frente, 12 teclas, verde e vermelha</td><td>1 jogo</td><td class="comprar">encomendar</td></tr>
-<tr><td>Espuma adesiva de 2 mm (um quadradinho, para apoiar a ponta de baixo da tela)</td><td>um pouco</td><td>opcional</td></tr>
-</tbody></table></div>
-
-<h2 id="como-fica">Como fica</h2>
-<p>De trás para a frente: o fundo da caixa, a pilha 18650 no suporte da própria LILYGO, a LILYGO com os componentes para a frente,
-{mm(P.VAO, 2)} mm de vão (os dois plásticos das barras), a placa da frente, e por cima dela as teclas e a tela. A LILYGO fica
-encostada na borda direita, com os USB-C na parede da direita; a faixa da esquerda da placa (colunas A a D) fica livre atrás, para os
-fios.</p>
-<p>A regra que deixa tudo limpo: <b>na frente da placa não corre fio</b>. Um fio que vem de trás atravessa um furo vizinho do pino e
-uma ponte de solda o liga ao pino. A ordem dos passos segue isso: o que fica entre as placas é feito antes de juntar, e testado.</p>
-
-{''.join(passos)}
-
-<h2 id="caixa">Imprimir a caixa</h2>
-<p>Cinco arquivos STL, já virados do jeito de imprimir. Mande para a gráfica 3D junto com estas instruções:</p>
-<div class="rolagem"><table>
-<thead><tr><th>Arquivo</th><th>O que é</th><th>Como imprimir</th></tr></thead>
-<tbody>
-<tr><td class="mono">fundo.stl</td><td>a metade de trás</td><td>a face de trás na mesa; sem suporte</td></tr>
-<tr><td class="mono">frente.stl</td><td>a metade da frente, com a janela da tela e os poços das teclas</td><td>a face da frente na mesa; sem suporte</td></tr>
-<tr><td class="mono">teclas.stl</td><td>as 12 teclas, com as letras gravadas</td><td>em pé, como estão; camada de 0,12 mm</td></tr>
-<tr><td class="mono">tecla_verde.stl</td><td>o botão verde</td><td>filamento verde</td></tr>
-<tr><td class="mono">tecla_vermelha.stl</td><td>o botão vermelho</td><td>filamento vermelho</td></tr>
-</tbody></table></div>
-<p><b>Material</b>: PETG (as linguetas de cima vergam para encaixar e o PETG não trinca) ou PLA. Camada de 0,2 mm, 3 perímetros,
-20% de preenchimento. As letras das teclas ficam bonitas pintadas: passe tinta e limpe o topo com pano.</p>
-<div class="aviso"><b>Não encomende ainda.</b> A caixa foi desenhada com as medidas do desenho do fabricante da tela e do alto-falante.
-Meça as suas peças e me mande as medidas abaixo; se alguma for diferente, eu ajusto os arquivos.</div>
-
-<h2 id="medidas">Medidas para a caixa</h2>
-<p>Com paquímetro, em milímetros. Os valores que já estão nos campos são os que a caixa usa hoje. Troque o que for diferente e
-copie o texto para me mandar na conversa.</p>
+<h2 id="conferir">Confira antes de imprimir e de encomendar</h2>
+<p>Os arquivos estão prontos, feitos com as medidas dos fabricantes. Oito coisas só dá para confirmar com a peça na mão. Meça
+com régua ou paquímetro, em milímetros. Se tudo cair na faixa, pode imprimir e encomendar. Se algo sair, escreva o que mediu,
+copie o texto e me mande: eu refaço os arquivos.</p>
 <form class="medidas" id="form-medidas">
 {campos_html}
-<div class="campo"><label for="m-vcc">Tela: o VCC, de frente com os pinos em cima, fica</label>
-<select id="m-vcc" name="vcc"><option>à esquerda</option><option>à direita</option></select></div>
-<div class="campo"><label for="m-barras">Barras de pinos da LILYGO</label>
-<select id="m-barras" name="barras"><option>soltas</option><option>plástico do lado dos componentes</option><option>plástico do lado da pilha</option></select></div>
 <button class="botao" type="submit">Copiar as medidas</button>
 <textarea id="medidas-texto" readonly aria-label="As medidas, para copiar"></textarea>
 <span class="copiado" id="copiado" aria-live="polite"></span>
 </form>
 
-<h2 id="depois">Depois: a placa de circuito</h2>
-<p>Com a placa ilhada funcionando, o mesmo desenho vira uma placa de circuito de verdade: o mesmo tamanho, os mesmos furos para as
-barras da LILYGO, as teclas e a tela nos mesmos lugares, e as trilhas no lugar dos fios. Ela se encomenda pronta (JLCPCB e
-parecidas) e cabe na mesma caixa. Fica para quando a placa ilhada estiver testada.</p>
+<h2 id="medidas">As medidas revisadas</h2>
+<p>Refiz todas as medidas a partir dos desenhos dos fabricantes. Três coisas mudaram em relação ao desenho anterior:</p>
+<ul>
+  <li><b>A tela fica com os pinos para baixo</b>, que é a posição normal dela: a imagem não precisa girar. O vidro não fica no
+  meio da plaquinha, e o soquete do cartão SD, atrás, tem {mm(P.T.sd_altura)} mm de altura.</li>
+  <li><b>O teclado entra inteiro.</b> Não precisa abrir nem medir por dentro. A caixa ficou da largura dele.</li>
+  <li><b>Nenhuma solda fica em cima da pilha.</b> Por isso os 4 pinos do toque da tela são cortados e os botões ficam perto das
+  bordas.</li>
+</ul>
+{medidas_revisadas}
+
+<h2 id="espessura">A espessura e a PCB</h2>
+<p>Vale a pena encomendar a PCB. Ela tira {mm(ganho)} mm da espessura e acaba com os {ANTES["fios"]} fios soltos. O que manda
+na espessura, porém, é a pilha: a LILYGO com a 18650 no suporte soma {mm(P.L.espessura + P.L.pilha_altura)} mm, mais da metade do
+total.</p>
+<p>De frente, a caixa cresceu: era {mm(ANTES["largura"])} × {mm(ANTES["comprimento"])} mm com as 14 chaves soldadas e passou a
+{mm(LARGURA)} × {mm(COMPRIMENTO)} mm. É o preço de usar o teclado pronto, que tem {mm(P.K.largura)} mm de largura e fica embaixo
+da tela.</p>
+<div class="lado-a-lado">
+  <figure style="margin:0"><div class="desenho-caixa">{desenho_espessura()}</div>
+  <figcaption>As camadas, de trás para a frente, em escala. As teclas passam {mm(P.Z_TECLAS - P.Z_TOPO)} mm da frente da
+  caixa.</figcaption></figure>
+  <div>
+    {camadas}
+    <p>Para afinar mais, só trocando a 18650 por uma bateria chata de lítio. Isso pede dessoldar o suporte da pilha da LILYGO e
+    soldar os fios da bateria nova. Não recomendo agora: é mexer na parte mais delicada da placa para ganhar uns
+    {mm(P.Z_TOPO - sem_suporte, 0)} mm. Fica como um passo para depois, com o Tijolo já funcionando.</p>
+    <p>Se a sua pilha medir menos que os {mm(P.L.pilha_altura)} mm que reservei (o modelo 3D aponta para 19 ou menos), eu tiro a
+    diferença da caixa.</p>
+  </div>
+</div>
+
+<h2 id="comprar">O que comprar</h2>
+{comprar}
+
+<h2 id="pcb">Encomendar a PCB</h2>
+<p>O arquivo é o <span class="mono">tijolo-pcb-gerbers-jlcpcb.zip</span>, que mandei na conversa. Ele também está no
+repositório, em <code>montagem/fabricar/pcb/</code>. Na JLCPCB (ou parecida), envie o zip do jeito que está e mude só a
+espessura:</p>
+<ul>
+  <li>2 camadas, material FR-4;</li>
+  <li><b>espessura da placa: 0,8 mm</b> (o padrão é 1,6; com 1,6 a frente da caixa não fecha);</li>
+  <li>quantidade 5, qualquer cor, acabamento HASL sem chumbo.</li>
+</ul>
+<figure>
+  <div class="duas">
+    <div class="prancha"><div class="titulo">A frente</div><img src="pcb-frente.svg" alt="A face da frente da PCB: em cima a fileira de furos da tela, com os nomes dos pinos, e as duas chaves, VERDE e VERMELHO; no meio as duas fileiras J1 e J2 e os dois retângulos da fita de espuma; embaixo os 9 furos da aba do teclado."></div>
+    <div class="prancha"><div class="titulo">Atrás (virada)</div><img src="pcb-tras.svg" alt="A face de trás da PCB, vista por trás: as duas barras fêmea com os nomes dos pinos, os quatro capacitores perto da fileira da tela e os 4 furos sem solda."></div>
+  </div>
+  <figcaption>As duas faces: em cor de cobre, onde vai solda; em escuro, o que vem escrito na placa. Na frente vão a tela, as
+  duas chaves e o teclado. Atrás vão as duas barras fêmea e os capacitores.</figcaption>
+</figure>
+<h3>O que a PCB liga</h3>
+{tabela_ligacoes()}
+<p class="pequeno">Os nomes J1-1, J2-3 contam os pinos a partir da ponta da ESP32. O teste de regras do KiCad passa sem erros e
+sem pinos soltos.</p>
+
+<h2 id="imprimir">Imprimir a caixa</h2>
+<p>Quatro arquivos STL, já virados do jeito de imprimir. Estão no <span class="mono">tijolo-caixa-3d.zip</span>, que mandei na
+conversa, e no repositório, em <code>montagem/fabricar/caixa/</code>. O zip leva um LEIA-ME com estas instruções para a
+gráfica 3D:</p>
+{imprimir}
+<p><b>Material</b>: PETG ou PLA. As linguetas da frente dobram para encaixar, e o PETG aguenta melhor. Camada de 0,2 mm,
+3 perímetros, 20% de preenchimento, <b>sem suportes</b>. Se os cantos do fundo levantarem da mesa, use aba (brim).</p>
+<p>A caixa fecha com duas linguetas em cima e dois parafusos M2 × 8 embaixo, que entram por trás.</p>
+
+<h2 id="cabos">Cabos e fios</h2>
+<p>Com a PCB, a tela, os botões e o teclado não usam nenhum fio solto. Sobra isto:</p>
+<div class="lado-a-lado">
+  <figure style="margin:0"><div class="desenho-caixa">{desenho_cabos()}</div>
+  <figcaption>O fundo visto de frente, sem a PCB. Em laranja, o cabo do alto-falante; em verde, o do microfone; tracejado, o da
+  antena, que passa por baixo da LILYGO.</figcaption></figure>
+  <div>
+    {cabos}
+    <p>Os conectores SPEK e MIC ficam do lado da pilha, perto da ponta de cima. Cada um tem um <b>+</b> marcado na placa. No
+    alto-falante tanto faz o lado; no microfone, o + vai no terminal que não toca a carcaça.</p>
+  </div>
+</div>
+
+{''.join(passos)}
 
 <h2 id="problemas">Se algo não funcionar</h2>
 <ul>
-  <li><b>Uma tecla só não responde</b>: refaça o teste do passo 6 para ela, agora com as pontas nos pinos da barra R e no fio C38.
-  Normalmente é a solda de uma perninha.</li>
-  <li><b>Uma fileira inteira (ou uma coluna) não responde</b>: a ponte de solda do lado direito daquela linha, ou o fio dela.</li>
-  <li><b>A tela fica branca ou preta</b>: confira os 9 fios da tela com o multímetro, do pino da tela até o pino da LILYGO, e o lado
-  do VCC (conferência B).</li>
-  <li><b>A tela fica branca nas ligações mais vezes do que antes</b>: a antena fica na parede da esquerda, a poucos milímetros dos
-  fios da tela (o maço da coluna B). Teste com a antena fora da caixa, longe. Se melhorar, me avise: dá para mudar o lugar dela ou o
-  caminho dos fios. O firmware continua apagando a luz e refazendo a tela na troca de rede, como hoje.</li>
-  <li><b>O vermelho não liga o Tijolo</b>: ele precisa estar no IO21 e o firmware com <code>MONTAGEM_PLACA 1</code>.</li>
-  <li><b>A frente não fecha</b>: veja se o capacitor de 100 µF passou da borda de cima da placa (passo 10), se algum pino da
-  linha 1 ficou comprido ou se a placa passou da medida (passo 2).</li>
-  <li><b>O sanduíche não desce até os pilares</b>: a pilha pode ser mais gorda que a do desenho. Meça e me mande (o campo
-  "LILYGO com a pilha", em <a href="#medidas">Medidas</a>).</li>
-  <li><b>O computador não acha o Tijolo para gravar</b>: com a caixa fechada não dá para apertar o BOOT e o RST da LILYGO. Abra,
-  tire o sanduíche e use os dois botõezinhos do lado da pilha, na ponta do ESP32: segure o BOOT, aperte e solte o RST, solte o
-  BOOT e grave.</li>
+  <li><b>A PCB não assenta nos pilares</b>: veja se sobrou algum dos 4 pinos da tela sem cortar e se alguma perna atrás passou
+  de 1,5 mm. Se a pilha encostar na PCB, me mande a medida dela.</li>
+  <li><b>A frente não fecha</b>: confira a espessura da PCB (tem de ser 0,8 mm), a tela assentada nas duas torres e os cabos,
+  que não podem ficar em cima dos pilares.</li>
+  <li><b>A tela fica branca ou sem imagem</b>: confira o firmware (<code>MONTAGEM_PLACA 2</code>) e as soldas dos 9 primeiros
+  pinos. Se a imagem aparecer de cabeça para baixo, mude <code>TELA_ROTACAO</code> no <code>config.h</code>.</li>
+  <li><b>Uma tecla, ou uma fileira inteira, não responde</b>: é uma perninha da aba do teclado. Refaça a solda e ensine o
+  teclado de novo.</li>
+  <li><b>Um botão fica sempre apertado</b>: a chave táctil é mais alta que 5,2 mm. Lixe um pouco a base do botão impresso.</li>
+  <li><b>Sem som, ou ninguém ouve você</b>: os cabos podem estar trocados entre SPEK e MIC. No microfone, confira o lado do
+  +.</li>
+  <li><b>Sinal fraco</b>: a antena tem de estar no conector LTE. O conector GNSS, ao lado, é do GPS, que a sua placa não
+  tem.</li>
+  <li><b>O computador não acha o Tijolo para gravar</b>: ele pode estar desligado pelo vermelho. Segure o vermelho por 1 segundo
+  para ligar. Se ainda assim não aparecer, abra, tire o conjunto da PCB e use os botõezinhos BOOT e RST da LILYGO, do lado da
+  pilha, na ponta da ESP32: segure o BOOT, aperte e solte o RST, solte o BOOT e grave.</li>
 </ul>
-<p class="pequeno">Os desenhos e a caixa saem de <code>montagem/</code> no repositório (projeto.py, fiacao.py, desenho.py, caixa/caixa.py):
-mudando uma medida lá, tudo se refaz igual.</p>
+
+<h2 id="fontes">De onde vêm as medidas</h2>
+<ul>
+  <li>LILYGO: o modelo 3D, o desenho com cotas e as fotos do
+  <a href="https://github.com/Xinyuan-LilyGO/LilyGo-Modem-Series/tree/main/dimensions/Standard">repositório oficial</a>.</li>
+  <li>Tela: o desenho <a href="https://www.lcdwiki.com/res/MSP2402/MSP2401_Size.pdf">MSP2401_Size.pdf</a> e a página do módulo
+  na <a href="https://www.lcdwiki.com/2.4inch_SPI_Module_ILI9341_SKU:MSP2402">LCDWiki</a>.</li>
+  <li>Teclado: a ficha da <a href="https://www.adafruit.com/product/3845">Adafruit 3845</a>, a da
+  <a href="https://www.universal-solder.ca/product/3x4-matrix-keypad-hard-keys-black/">Universal Solder</a> e a foto com cotas
+  do anúncio.</li>
+</ul>
+<p class="pequeno">A PCB, a caixa e este guia saem dos scripts da pasta <code>montagem/</code> do repositório (projeto.py,
+placa/placa.py, caixa/caixa.py e guia.py). Mudando uma medida em projeto.py, tudo se refaz igual.</p>
 </main>
 </div>
 <script src="{CDN}/build/three.min.js"></script>
@@ -727,37 +812,32 @@ mudando uma medida lá, tudo se refaz igual.</p>
 
 JS = r"""
 (function () {
-  // ---------- guardar as conferências e a escolha da tela (só neste navegador) ----------
+  // ---------- guardar as conferências (só neste navegador) ----------
   function ler(k, padrao) { try { var v = localStorage.getItem(k); return v === null ? padrao : v; } catch (e) { return padrao; } }
   function gravar(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
   document.querySelectorAll('input[data-confere]').forEach(function (c) {
-    c.checked = ler('tijolo-' + c.dataset.confere, '0') === '1';
-    c.addEventListener('change', function () { gravar('tijolo-' + c.dataset.confere, c.checked ? '1' : '0'); });
+    c.checked = ler('tijolo2-' + c.dataset.confere, '0') === '1';
+    c.addEventListener('change', function () { gravar('tijolo2-' + c.dataset.confere, c.checked ? '1' : '0'); });
   });
-  function tela(modo) {
-    document.querySelectorAll('[data-tela-mostra]').forEach(function (el) { el.hidden = el.dataset.telaMostra !== modo; });
-    document.querySelectorAll('button[data-tela]').forEach(function (b) { b.setAttribute('aria-pressed', b.dataset.tela === modo ? 'true' : 'false'); });
-    var sel = document.getElementById('m-vcc'); if (sel) sel.value = modo === 'espelhada' ? 'à direita' : 'à esquerda';
-    gravar('tijolo-tela', modo);
-  }
-  document.querySelectorAll('button[data-tela]').forEach(function (b) { b.addEventListener('click', function () { tela(b.dataset.tela); }); });
-  tela(ler('tijolo-tela', 'normal'));
 
   // ---------- medidas ----------
   var form = document.getElementById('form-medidas');
   var saida = document.getElementById('medidas-texto');
+  form.querySelectorAll('.campo input').forEach(function (i) {
+    i.value = ler('tijolo2-medida-' + i.name, '');
+    i.addEventListener('input', function () { gravar('tijolo2-medida-' + i.name, i.value); });
+  });
   function texto() {
     var linhas = ['Medidas do Tijolo (mm):'];
     form.querySelectorAll('.campo').forEach(function (c) {
-      var l = c.querySelector('label'), i = c.querySelector('input, select');
+      var l = c.querySelector('label'), i = c.querySelector('input');
       var nome = l.childNodes[0].textContent.trim();
-      linhas.push('- ' + nome + ': ' + i.value);
+      linhas.push('- ' + nome + ': ' + (i.value.trim() || 'não medi'));
     });
     return linhas.join('\n');
   }
   function atualizar() { saida.value = texto(); }
   form.addEventListener('input', atualizar);
-  form.addEventListener('change', function (e) { if (e.target.id === 'm-vcc') tela(e.target.value === 'à direita' ? 'espelhada' : 'normal'); atualizar(); });
   form.addEventListener('submit', function (e) {
     e.preventDefault(); atualizar();
     var aviso = document.getElementById('copiado');
@@ -777,34 +857,35 @@ JS = r"""
   r.setSize(W, H, false);
   r.localClippingEnabled = true;
   var cena = new THREE.Scene();
-  var cam = new THREE.PerspectiveCamera(28, W / H, 1, 3000);
+  var cam = new THREE.PerspectiveCamera(26, W / H, 1, 3000);
   cam.up.set(0, 0, 1);
   cena.add(new THREE.HemisphereLight(0xffffff, 0x4a5650, 0.85));
   var luz = new THREE.DirectionalLight(0xffffff, 0.65); luz.position.set(-80, -140, 220); cena.add(luz);
   var luz2 = new THREE.DirectionalLight(0xffffff, 0.3); luz2.position.set(120, 90, -80); cena.add(luz2);
-  var corte = new THREE.Plane(new THREE.Vector3(-1, 0, 0), 22.86);
-  var centro = new THREE.Vector3(23, 52, 10);
+  var corte = new THREE.Plane(new THREE.Vector3(-1, 0, 0), 35.8);      // pelo eixo da pilha
   // de onde a câmera olha em cada modo: [alvo, deslocamento da câmera]
   var olhar = {
-    fechado: [[23, 52, 10], [-112, -196, 166]],
-    aberto: [[23, 56, 30], [-128, -224, 196]],
-    corte: [[23, 66, 18], [255, -25, 45]]
+    fechado: [[26, 80, 14], [135, -265, 250]],
+    aberto: [[26, 80, 36], [150, -300, 250]],
+    dentro: [[26, 80, 8], [95, -190, 320]],
+    corte: [[36, 80, 18], [370, -60, 70]]
   };
+  var ctl = new THREE.OrbitControls(cam, r.domElement);
+  ctl.enableDamping = true; ctl.enablePan = false; ctl.minDistance = 130; ctl.maxDistance = 640;
   function enquadrar(m) {
     var o = olhar[m];
     ctl.target.set(o[0][0], o[0][1], o[0][2]);
     cam.position.set(o[0][0] + o[1][0], o[0][1] + o[1][1], o[0][2] + o[1][2]);
   }
-  cam.position.set(centro.x - 112, centro.y - 196, centro.z + 166);
-  var ctl = new THREE.OrbitControls(cam, r.domElement);
-  ctl.target.copy(centro); ctl.enableDamping = true; ctl.enablePan = false; ctl.minDistance = 120; ctl.maxDistance = 520;
+  enquadrar('fechado');
   var pecas = [
-    { arq: 'fundo', cor: 0x3b4046, grupo: 'caixa' }, { arq: 'frente', cor: 0x4f565e, grupo: 'frente' },
-    { arq: 'teclas', cor: 0xe6e2d8, grupo: 'frente' }, { arq: 'tecla_verde', cor: 0x2f9e58, grupo: 'frente' },
-    { arq: 'tecla_vermelha', cor: 0xcf3b33, grupo: 'frente' },
-    { arq: 'miolo_lilygo', cor: 0x2f6247, grupo: 'miolo' }, { arq: 'miolo_placa', cor: 0x3c7a57, grupo: 'miolo' },
-    { arq: 'miolo_tela', cor: 0x1a2740, grupo: 'tela' }, { arq: 'miolo_pilha', cor: 0xc46a2b, grupo: 'miolo' },
-    { arq: 'miolo_som', cor: 0xb08840, grupo: 'miolo' }
+    { arq: 'fundo', cor: 0x4b535b, grupo: 'fundo' }, { arq: 'frente', cor: 0x687280, grupo: 'frente' },
+    { arq: 'botao_verde', cor: 0x2f9e58, grupo: 'frente' }, { arq: 'botao_vermelho', cor: 0xcf3b33, grupo: 'frente' },
+    { arq: 'miolo_lilygo', cor: 0x27485a, grupo: 'lilygo' }, { arq: 'miolo_encaixe', cor: 0x16181a, grupo: 'lilygo' },
+    { arq: 'miolo_pilha', cor: 0xd9a441, grupo: 'lilygo' }, { arq: 'miolo_som', cor: 0x8a6f4e, grupo: 'lilygo' },
+    { arq: 'miolo_pcb', cor: 0x2f7a4f, grupo: 'pcb' }, { arq: 'miolo_tela', cor: 0xa8483c, grupo: 'pcb' },
+    { arq: 'miolo_vidro', cor: 0x14171c, grupo: 'pcb' }, { arq: 'miolo_teclado', cor: 0x1d1d20, grupo: 'pcb' },
+    { arq: 'miolo_teclas', cor: 0x3a3a41, grupo: 'pcb' }
   ];
   var malhas = [], modo = 'fechado', pronto = false;
   // 3d/pecas.json: cada peça é uma lista de triângulos, com as coordenadas em
@@ -833,8 +914,8 @@ JS = r"""
     malhas.forEach(function (m) {
       var g = m.userData.grupo;
       m.material.clippingPlanes = modo === 'corte' ? [corte] : [];
-      m.visible = !(modo === 'fechado' && g === 'miolo');
-      m.position.z = (modo === 'aberto' && g === 'frente') ? 42 : 0;
+      m.visible = !(modo === 'dentro' && (g === 'frente' || g === 'pcb'));
+      m.position.z = (modo === 'aberto' && g === 'frente') ? 46 : 0;
     });
   }
   function comecar() {
@@ -843,6 +924,7 @@ JS = r"""
     document.getElementById('vista-dica').hidden = false;
     document.getElementById('vista-controles').hidden = false;
     pronto = true; aplicar(); animar();
+    document.documentElement.setAttribute('data-vista', 'pronta');
   }
   document.querySelectorAll('button[data-modo]').forEach(function (b) {
     b.addEventListener('click', function () {
@@ -900,16 +982,15 @@ def pacote_3d(pasta):
 
 def gerar():
     os.makedirs(os.path.join(SAIDA, "3d"), exist_ok=True)
-    D.gerar(os.path.join(AQUI, "saida"))
     pag = pagina()
     with open(os.path.join(SAIDA, "index.html"), "w", encoding="utf-8") as f:
         f.write(pag)
+    for lado in ("frente", "tras"):
+        with open(os.path.join(SAIDA, f"pcb-{lado}.svg"), "w", encoding="utf-8") as f:
+            f.write(svg_da_pcb(lado))
     vis = os.path.join(AQUI, "saida", "caixa", "visual")
     with open(os.path.join(SAIDA, "3d", "pecas.json"), "w", encoding="ascii") as f:
         json.dump(pacote_3d(vis), f, separators=(",", ":"))
-    for velho in os.listdir(os.path.join(SAIDA, "3d")):
-        if velho.endswith(".stl"):
-            os.remove(os.path.join(SAIDA, "3d", velho))
     return os.path.join(SAIDA, "index.html")
 
 

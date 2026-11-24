@@ -1,76 +1,120 @@
-# Montagem do Tijolo: placa ilhada e caixa 3D
+# Montagem do Tijolo: PCB da frente e caixa 3D
 
-O Tijolo montado em sanduíche, quase sem fios: uma placa ilhada na frente, com as 14 teclas e a tela, encaixada direto nas
-barras de pinos da LILYGO. Na frente da placa não corre nenhum fio, só pontes de solda; os 19 fios ficam atrás, curtos.
-Uma caixa impressa em 3D fecha tudo.
+O Tijolo fechado numa caixa impressa em 3D, sem fios soltos. Uma PCB encomendada encaixa direto nos pinos da LILYGO e leva
+a tela, os botões verde e vermelho e a ligação do teclado. O teclado 3×4 entra inteiro, sem abrir. Sobram dois cabos (o do
+alto-falante e o do microfone) e a antena.
 
-O passo a passo para quem vai soldar está no [guia](https://claude.ai/artifact/CuJ8r7VZzr5Dn8WH7geubx) (uma página com os desenhos furo a furo, as tabelas, os testes com o
-multímetro, a vista 3D da caixa e o formulário das medidas). Esta pasta tem os scripts que geram o guia, os desenhos e a caixa:
-mudando uma medida em `projeto.py`, tudo se refaz igual.
+![O Tijolo montado](fabricar/tijolo.png)
 
-## Os arquivos
-
-| Arquivo | O que faz |
-|---|---|
-| `projeto.py` | Todas as medidas num lugar só: a grade da placa (18 × 51 furos), onde fica a LILYGO, as alturas (Z), a tela, as teclas, a caixa, o alto-falante e o microfone. `MEDIDAS` lista o que medir antes de encomendar a caixa. `python3 projeto.py` mostra um resumo. |
-| `lilygo_pecas.json` | As caixas das peças da LILYGO, tiradas do modelo 3D oficial (T-A7670X-S3-Standard.step, de 26/08/2026): onde está cada peça e a altura dela, dos dois lados da placa. |
-| `fiacao.py` | O que vai em cada furo e cada ligação: a matriz do teclado, os 7 fios da direita, os 12 da faixa da esquerda e as pontes da frente. `conferir()` procura furos repetidos, fio nu passando por solda de outro sinal e fio sem folga em cima das peças da LILYGO. `python3 fiacao.py` lista tudo e confere. |
-| `desenho.py` | Os desenhos (SVG): a frente, atrás antes e depois de juntar com a LILYGO e o corte de lado. Faz também a frente e o "atrás depois" para a tela com o VCC à direita. |
-| `caixa/caixa.py` | A caixa (CadQuery): o fundo, a frente e as 14 teclas, já virados do jeito de imprimir, e versões leves para a vista 3D do guia. No fim, confere se alguma peça de dentro bate na caixa. |
-| `guia.py` | O guia: `saida/guia/index.html` (com os desenhos dentro) e `saida/guia/3d/pecas.json` (as peças da vista 3D). |
-
-Tudo sai em `saida/` (fora do git).
-
-## Como gerar
-
-Precisa do Python 3.10 ou mais novo com o `numpy` e, para a caixa, do CadQuery 2.x (`pip install cadquery`). Da pasta
-`montagem/`:
-
-```
-python3 fiacao.py            # confere a fiação
-python3 caixa/caixa.py       # a caixa (uns 2 minutos) e a conferência das colisões
-python3 guia.py              # o guia, com os desenhos
-```
-
-`caixa/caixa.py fundo`, `frente`, `teclas`, `visual` ou `conferir` faz só aquela parte. `TELA_ESPELHADA=1 python3 fiacao.py`
-mostra a fiação da tela com o VCC à direita. A imagem de capa do guia (`capa.png`, o que aparece antes da vista 3D carregar) é
-uma foto da própria vista 3D, tirada com o navegador.
+- **Para montar**: o passo a passo está no [guia](https://claude.ai/artifact/CuJ8r7VZzr5Dn8WH7geubx), com as medidas para
+  conferir, o que comprar, como encomendar a PCB, como imprimir e a vista 3D.
+- **Os arquivos prontos** estão em [`fabricar/`](fabricar/LEIA-ME.md): os Gerbers da PCB e os STL da caixa.
+- **Esta pasta** tem os scripts que geram a PCB, a caixa e o guia: mudando uma medida em `projeto.py`, tudo se refaz igual.
 
 ## Como fica
+
+- **A LILYGO vai de costas.** Os pinos dela estão soldados do lado da pilha e ficam assim. Os componentes olham para o fundo
+  da caixa; a pilha e os pinos, para a frente. A ponta da ESP32 fica para baixo e os USB-C saem pela lateral direita. Dois
+  pilares do fundo têm pino, que entra nos furos dela (Ø 2,55), e os outros dois recebem parafusos M2 × 5.
+- **A PCB da frente** (51,5 × 82,7 mm, 0,8 mm) encaixa nos pinos com duas barras fêmea de perna longa e passa 0,6 mm acima
+  da pilha. Nenhuma solda fica em cima da pilha: o script confere.
+- **A tela** é soldada na PCB pelos próprios pinos, com os pinos para baixo, que é a posição normal dela (rotação 0). Os
+  quatro pinos do toque que cairiam em cima da pilha são cortados; no lugar deles a PCB tem furos sem cobre, que escondem os
+  toquinhos. A ponta de cima da tela apoia em duas torres do fundo, ao lado do alto-falante.
+- **O teclado** fica colado na PCB com fita dupla face de espuma. A aba dele se liga à PCB por 7 perninhas de fio.
+- **A frente sai inteira** (duas linguetas em cima, dois parafusos M2 × 8 embaixo) e o conjunto PCB + tela + teclado desencaixa
+  dos pinos para trocar a pilha.
+- **A chave liga/desliga** da LILYGO fica acessível por trás, numa fenda com ON e OFF gravados.
 
 De trás para a frente (Z, em mm, a partir da face de fora do fundo):
 
 | Z | O quê |
 |---|---|
-| 0 a 1,8 | o fundo da caixa |
-| 2,2 | a pilha 18650, no suporte da LILYGO |
-| 21,0 a 22,6 | a LILYGO, com os componentes para a frente |
-| 22,6 a 27,7 | dois plásticos de barra de pinos empilhados (5,08 mm): ali ficam a matriz do teclado e os 7 fios da direita |
-| 27,7 a 29,3 | a placa ilhada |
-| 31,8 a 36,1 | a tela, sobre um plástico de barra, e as teclas |
-| 38,2 | a face da frente da caixa (as teclas saem 1,2 mm) |
+| 0 a 1,5 | o fundo da caixa |
+| 1,5 a 5,0 | os componentes da LILYGO (o mais alto, o USB-C, tem 3,2; o conector SOLAR, de 6,25, tem de sair) |
+| 5,0 a 6,6 | a placa da LILYGO |
+| 6,6 a 26,2 | a pilha 18650 no suporte (reservei 19,6 mm; o modelo 3D aponta para 18,1 a 18,9) |
+| 26,8 a 27,6 | a PCB da frente |
+| 30,1 a 34,4 | a tela, apoiada no plástico da barra de pinos dela |
+| 35,4 | a face da frente da caixa |
+| 38,8 | o topo das teclas (saem 3,4 mm da caixa) |
 
-A caixa tem 50,3 × 141,2 × 38,2 mm. A frente desce reta sobre o fundo: em cima, duas linguetas com dente fazem clic nos rasgos
-da parede; embaixo, dois parafusos M2 × 8 entram por trás nos pilares da frente. A LILYGO fica apoiada em 4 pilares com pinos nos
-furos dela.
+A caixa tem 56,0 × 161,8 × 35,4 mm. Quem manda na espessura é a pilha: LILYGO mais pilha somam 21 mm e a tela soma 8. A
+PCB tira 2,7 mm em relação ao desenho anterior, de placa ilhada (38,2 mm), e acaba com os 19 fios. Para afinar mais, só
+trocando a 18650 por uma bateria chata (uns 26 mm), o que pede dessoldar o suporte.
 
-## Os pinos (`MONTAGEM_PLACA 1`)
+## Os arquivos
 
-Na placa ilhada, os botões verde e vermelho são de verdade e a coluna 1 4 7 * do teclado troca de pino com o vermelho, que
-precisa de um pino que acorde a ESP32 (IO21). Com `#define MONTAGEM_PLACA 1` no `include/config.h`:
-
-| O quê | Pino |
+| Arquivo | O que faz |
 |---|---|
-| Fileiras 1 2 3 / 4 5 6 / 7 8 9 / * 0 # | IO15 / IO38 / IO39 / IO40 |
-| Colunas 1 4 7 * / 2 5 8 0 / 3 6 9 # | IO17 / IO37 / IO16 |
-| Botão verde / vermelho | IO35 / IO21 |
-| Tela | a mesma da Fase 2 (CS IO47, RESET IO9, DC IO14, MOSI IO11, SCK IO12, MISO IO13, luz IO36) |
+| `projeto.py` | Todas as medidas num lugar só: a LILYGO, a tela, o teclado, as alturas (Z), a PCB, a caixa, o alto-falante e o microfone. `MEDIDAS` lista o que conferir com a peça na mão. `python3 projeto.py` mostra um resumo. |
+| `lilygo_pecas.json` | As caixas das peças da LILYGO, tiradas do modelo 3D oficial (T-A7670X-S3-Standard.step, de 26/08/2026): onde está cada peça e a altura dela, dos dois lados da placa. |
+| `placa/placa.py` | A PCB (KiCad 7, pelo `pcbnew`): põe as peças, traça as trilhas, enche o GND, roda o teste de regras e gera os Gerbers para a JLCPCB, a lista de peças e as imagens. Para se alguma solda ficar em cima da pilha. |
+| `placa/roteador.py` | O traçador de trilhas: grade de 0,2 mm, 2 camadas, vias, trechos a 0°, 45° e 90°. |
+| `caixa/caixa.py` | A caixa (CadQuery): o fundo, a frente e os dois botões, já virados do jeito de imprimir, e versões leves para a vista 3D do guia. No fim, confere se cada peça é um sólido só e se alguma peça de dentro bate na caixa ou em outra peça. |
+| `guia.py` | O guia: `saida/guia/index.html`, os desenhos da PCB e `saida/guia/3d/pecas.json` (as peças da vista 3D). |
+| `empacotar.py` | Copia para `fabricar/` o que vai para a fábrica de placas e para a gráfica 3D, e faz o zip da caixa. |
 
-Depois de gravar, ensine o teclado de novo: segure o 1 enquanto aparece "Ligando o modem…" (ou `teclado aprender` no Monitor
-Serial).
+O que os scripts geram sai em `saida/` (fora do git). O que vale guardar vai para `fabricar/` (no git).
 
-## Antes de encomendar a caixa
+## Como gerar
 
-A caixa usa as medidas do desenho do fabricante da tela (MSP2401, LCDWiki), do modelo 3D da LILYGO e dos nomes das peças
-(alto-falante 3525, microfone 9767). As que podem variar estão em `projeto.MEDIDAS`, e o guia tem um formulário com elas:
-meça as suas peças e confira antes de mandar imprimir.
+Precisa do Python 3.10 ou mais novo com `numpy`, `shapely` e `Pillow`, do KiCad 7 (para a PCB) e do CadQuery 2.x (para a
+caixa). Da pasta `montagem/`:
+
+```
+python3 projeto.py           # o resumo das medidas
+python3 placa/placa.py       # a PCB (uns 20 segundos): o KiCad, os Gerbers e o teste de regras
+python3 caixa/caixa.py       # a caixa (menos de 1 minuto) e a conferência
+python3 guia.py              # o guia
+python3 empacotar.py         # a pasta fabricar/ e o zip da caixa
+```
+
+`caixa/caixa.py fundo`, `frente`, `botoes`, `visual`, `folgas` ou `conferir` faz só aquela parte. `folgas` lista as menores
+distâncias entre a caixa e as peças.
+
+## As medidas e de onde vieram
+
+| Peça | Medidas usadas | Fonte |
+|---|---|---|
+| LILYGO | placa 33,07 × 110,54 × 1,6 mm; duas barras de 16 pinos a 30,45 mm uma da outra, com o plástico do lado da pilha; 4 furos de Ø 2,55; suporte da pilha com 15 mm | modelo 3D oficial, desenho com cotas (DXF) e foto do lado da pilha, do [repositório da LILYGO](https://github.com/Xinyuan-LilyGO/LilyGo-Modem-Series/tree/main/dimensions/Standard) |
+| Pilha | topo a até 19,6 mm da face da placa | o modelo 3D dá de 18,1 a 18,9: **conferir** |
+| Tela | plaquinha 42,72 × 77,18 mm; pinos a 2,00 mm da borda, o 1 (VCC) a 4,85 mm da esquerda; vidro de 10,41 a 70,67 mm; imagem 36,72 × 48,96 mm; soquete do cartão SD atrás, com 3,0 mm de altura | desenho do fabricante ([LCDWiki, MSP2401_Size.pdf](https://www.lcdwiki.com/res/MSP2402/MSP2401_Size.pdf), V1.0 de 15/04/2024) |
+| Teclado | corpo 51,4 × 64,2 mm; aba dos contatos 36,2 × 5,3 mm com 9 furos a 2,54 mm; espessura 9,7 mm | foto com cotas do anúncio e ficha da [Adafruit 3845](https://www.adafruit.com/product/3845) (o mesmo teclado): **conferir** |
+| Alto-falante | 35 × 25 mm, até 6 mm de espessura | nome da peça (3525): **conferir** |
+| Microfone | Ø 9,7 × 6,7 mm | nome da peça (9767) |
+| Chaves tácteis | 6 × 6 mm, 5,0 mm de altura (serve de 4,5 a 5,2) | tamanho comum: **conferir** |
+
+## A PCB
+
+Duas camadas, 0,8 mm. Na face de trás (a que olha para a pilha) ficam as duas barras fêmea e os capacitores da tela; na da
+frente, a tela, as duas chaves tácteis e o teclado.
+
+| Na PCB | Liga em | Pino da ESP32 |
+|---|---|---|
+| Tela: VCC, GND | J1-1 e J2-3 (3V3), GND | — |
+| Tela: CS, RESET, DC | J1-4, J1-6, J1-5 | IO47, IO9, IO14 |
+| Tela: SDI (MOSI), SCK, LED, SDO (MISO) | J1-13, J1-14, J1-7, J1-15 | IO11, IO12, IO36, IO13 |
+| Aba do teclado, furos 2 a 8 | J2-13, J2-11, J1-10, J2-8, J2-12, J2-9, J2-10 | IO37, IO15, IO17, IO40, IO16, IO39, IO38 |
+| Botão verde, botão vermelho | J1-8, J2-14 | IO35, IO21 |
+| C2 (100 µF), C1 (100 nF), C4 (100 pF) | entre 3V3 e GND, ao lado dos pinos da tela | — |
+| C5 (100 nF) | entre o RESET da tela e GND | IO9 |
+
+Os pinos das barras contam a partir da ponta da ESP32 (J1 é a barra do lado da chave; J2, a do lado dos USB). O firmware
+aprende sozinho qual fio do teclado é qual (`teclado aprender`), então a ordem dos 7 furos não importa. Três deles (IO15,
+IO16 e IO17) são pinos que conseguem acordar a ESP32.
+
+**Para encomendar** (JLCPCB ou parecida): envie `fabricar/pcb/tijolo-pcb-gerbers-jlcpcb.zip`, 2 camadas, espessura
+**0,8 mm**, quantidade 5, acabamento HASL sem chumbo. O resto fica no padrão.
+
+## O firmware (`MONTAGEM_PLACA 2`)
+
+Com `#define MONTAGEM_PLACA 2` no `include/config.h`, os botões verde e vermelho passam a ser de verdade (IO35 e IO21; o
+vermelho acorda a ESP32) e o teclado usa os 7 pinos da tabela acima. A tela fica na rotação 0. Depois de gravar, ensine o
+teclado de novo: segure o 1 enquanto aparece "Ligando o modem…" (ou `teclado aprender` no Monitor Serial).
+
+## Para imprimir
+
+`fabricar/caixa/fundo.stl`, `frente.stl` (já com a cara para baixo), `botao_verde.stl` e `botao_vermelho.stl`. PETG ou PLA,
+camada de 0,2 mm, 3 perímetros, 20% de preenchimento, sem suportes. Os `.step` saem em `saida/caixa/`, para quem quiser
+mexer no desenho.

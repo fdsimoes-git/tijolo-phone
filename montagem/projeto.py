@@ -1,31 +1,37 @@
 """
-O Tijolo, segunda montagem: a LILYGO de costas e uma placa de circuito na frente.
+O Tijolo, montagem com a PCB da frente: todas as medidas num lugar só.
 
-As barras de pinos da LILYGO estão soldadas com os pinos para o lado da pilha
-(e ficam assim). Então a LILYGO entra de costas na caixa: os componentes para
-o fundo, a pilha para a frente. A placa de circuito da frente (encomendada)
-encaixa nos pinos com duas barras fêmea de perna longa e passa por cima da
-pilha. Na frente dela ficam a tela, os contatos do teclado 3×4 (as teclas e a
-borracha do teclado que o Felipe já tem, desmontado) e os botões verde e
-vermelho. Sem fio nenhum entre as placas, e a frente sai inteira para trocar
-a pilha.
+Como fica (de trás para a frente):
+  - a LILYGO de costas: os componentes para o fundo da caixa, a pilha e os
+    pinos (que já estão soldados do lado da pilha) para a frente. A ponta da
+    ESP32 fica para baixo e os USB-C saem pela parede da direita;
+  - a PCB da frente, encomendada: encaixa nos pinos da LILYGO com duas barras
+    fêmea de perna longa e passa por cima da pilha. Ela leva a tela (soldada
+    pelos próprios pinos), os botões verde e vermelho e os 7 furos onde se
+    liga a aba do teclado;
+  - o teclado 3×4 do Felipe, INTEIRO (não precisa abrir), colado na PCB com
+    fita dupla face de espuma;
+  - a tela com os pinos para baixo, que é a posição normal dela.
 
-A tela vai de cabeça para baixo (os pinos embaixo, perto das teclas), para a
-ponta de cima dela passar por cima do alto-falante; o firmware gira a imagem.
-
-Coordenadas, em mm, olhando o Tijolo de frente (a tela e as teclas para
-você), com a tela em cima:
+Coordenadas, em mm, olhando o Tijolo de frente (a tela em cima):
   X: da esquerda para a direita, a partir da parede da esquerda (por dentro)
   Y: de baixo para cima, a partir da parede de baixo (por dentro)
   Z: de trás para a frente, a partir da face de fora do fundo da caixa
 
-Medidas das peças: modelo 3D oficial da LILYGO (lilygo_pecas.json) e desenho
-da tela MSP2401 (LCDWiki). O teclado ainda é provisório: as medidas dele
-chegam com as fotos (ver TECLADO e MEDIDAS).
+De onde vêm as medidas:
+  - LILYGO: modelo 3D oficial (lilygo_pecas.json) e o desenho com cotas (DXF)
+    do repositório da LILYGO: placa de 33,1 × 110,6 mm, barras a 30,45 mm uma
+    da outra, 4 furos de Ø2,55;
+  - tela: desenho do fabricante, MSP2401_Size.pdf da LCDWiki (V1.0, 2024-04-15);
+  - teclado: foto com cotas do anúncio (51,4 × 69,3 mm) e ficha da Adafruit
+    3845, que é o mesmo teclado (70,0 × 51,0 × 9,7 mm);
+  - alto-falante e microfone: os nomes das peças (3525 e 9767).
+As que só dá para confirmar com a peça na mão estão em MEDIDAS, no fim.
 """
 import json
+import math
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 
 def _mm(v: float, casas: int = 1) -> str:
@@ -42,33 +48,38 @@ class Lilygo:
     altura: float = 110.54
     espessura: float = 1.6
     raio: float = 2.03
-    barra_x: tuple = (1.359, 31.808)        # as duas barras (J1 à esquerda, J2 à direita)
-    pino1_y: float = 103.308                # pino 1 das duas barras (lado do ESP32)
+    barra_x: tuple = (1.359, 31.808)        # J1 (lado da chave) e J2 (lado dos USB)
+    pino1_y: float = 103.308                # pino 1 das duas barras (ponta da ESP32)
     furos_fixacao: tuple = ((2.591, 2.316), (30.353, 2.316), (2.609, 107.878), (30.319, 107.868))
-    # a chave liga/desliga, na borda esquerda: corpo y0..y1, botão y0..y1, quanto sai da borda, z do botão
+    furo_fixacao_d: float = 2.55            # o desenho oficial (DXF) dá Ø2,55, com um anel livre de Ø5,5
+    # a chave liga/desliga, na borda do lado da J1: corpo y0..y1, botão y0..y1, quanto sai da borda, z do botão
     chave: tuple = (54.66, 63.66, 59.24, 60.54, 1.85, 1.15, 2.55)
     chave_corpo_x: tuple = (-1.9, 3.6)
-    jst_solar: tuple = (0.42, 48.27, 5.22, 54.29, 6.25)     # x0, y0, x1, y1, altura: SAI
-    sim: tuple = (0.75, 34.44, 13.06, 45.81)                # o chip entra pela borda esquerda
+    chave_altura: float = 3.65
+    sim: tuple = (0.75, 34.44, 13.06, 45.81)                # o chip entra pela borda do lado da J1
     usb_esp_y: float = 58.30
     usb_modem_y: float = 46.62
     usb_largura: float = 8.94
     usb_altura: float = 3.21
     usb_sai: float = 0.84                    # o USB passa da borda da placa
-    qwiic: tuple = ((20.22, 26.52), (27.71, 34.01))   # na borda direita, do lado da pilha; saem 0,76
+    qwiic: tuple = ((20.22, 26.52), (27.71, 34.01))   # na borda dos USB, do lado da pilha; saem 0,76
     qwiic_sai: float = 0.76
     ufl_lte: tuple = (16.40, 1.82)
+    antena_esp: tuple = (7.49, 104.0, 25.51, 110.61)  # a antena da ESP32 (ponta do módulo)
     # lado da pilha
     suporte_18650: tuple = (6.49, 13.66, 27.15, 99.68)
+    suporte_altura: float = 15.01
     pilha_y: tuple = (24.2, 89.2)            # a pilha de 65 mm, centralizada no suporte
     pilha_x: float = 16.81                   # o eixo da pilha
     pilha_raio: float = 9.3
-    bateria_fundo: float = 18.8             # da face da placa até o ponto mais alto da pilha (18,3 a 18,8)
-    spek: tuple = (1.32, 10.49, 5.67, 14.24)
-    mic: tuple = (1.41, 5.33, 5.76, 9.08)
-    rtc: tuple = (22.09, 2.52, 25.84, 6.88)
+    # Da face da placa até o ponto mais alto da pilha. No modelo 3D o eixo da pilha
+    # fica a uns 9,0 a 9,5 mm da placa e a pilha tem de 18,2 a 18,6 mm: o topo dá
+    # entre 18,1 e 18,9. Reservo 19,6, com folga. CONFERIR com régua.
+    pilha_altura: float = 19.6
+    spek: tuple = (1.32, 10.49, 5.67, 14.24)     # conector SPK (SH 1.0, de pé, 4,47 de altura)
+    mic: tuple = (1.41, 5.33, 5.76, 9.08)        # conector MIC
     barra_plastico: float = 2.54             # o plástico da barra, do lado da pilha
-    barra_pino: float = 6.0                  # CONFERIR: quanto o pino passa do plástico
+    barra_pino: float = 5.84                 # o pino, depois do plástico (barra comum de 2,54 mm)
 
 
 L = Lilygo()
@@ -85,122 +96,177 @@ J1 = ["3V3", "GND", "IO1", "IO47", "IO14", "IO9", "IO36", "IO35", "IO0", "IO17",
 J2 = ["TX", "RX", "3V3", "GND", "IO2", "IO3", "IO41", "IO40", "IO39", "IO38", "IO15", "IO16",
       "IO37", "IO21", "GND", "VBUS"]
 
+
+# ---------------------------------------------------------------------------
+# Tela 2,4" SPI ILI9341 sem toque (LCDWiki MSP2401). Coordenadas próprias:
+# de frente, com os pinos embaixo (a posição normal: a imagem fica em pé com
+# a rotação 0); u da borda esquerda, v da borda de baixo (a dos pinos).
+# ---------------------------------------------------------------------------
+@dataclass(frozen=True)
+class Tela:
+    largura: float = 42.72
+    altura: float = 77.18
+    pcb: float = 1.6
+    lcd: float = 2.2 + 0.5                   # o vidro com a luz (2,2) e a fita de trás (0,5)
+    pino1_u: float = 4.85                    # pino 1 (VCC), à esquerda
+    pinos_v: float = 2.00
+    furos: tuple = ((3.00, 6.92), (39.72, 6.92), (3.00, 74.18), (39.72, 74.18))   # Ø3,2
+    vidro_v: tuple = (10.41, 70.67)          # o vidro tem a largura toda da plaquinha
+    imagem_u: tuple = (3.00, 39.72)
+    imagem_v: tuple = (18.96, 67.92)
+    j4_v: float = 75.01                      # os 4 furos do cartão SD (sem pinos), em cima
+    # atrás: o soquete do cartão SD (o grande), encostado na borda esquerda
+    sd_u: tuple = (0.8, 20.4)
+    sd_v: tuple = (33.0, 62.6)
+    sd_altura: float = 3.0
+    # atrás: regulador, transistor, resistores (o mais alto tem 1,1)
+    pecas_u: tuple = (18.0, 39.0)
+    pecas_v: tuple = (13.0, 50.5)
+    pecas_altura: float = 1.3
+    barra_plastico: float = 2.54             # o plástico amarelo da barra, atrás
+    barra_pino: float = 5.84                 # o pino, depois do plástico
+    solda_frente: float = 1.4                # as soldas da barra, na frente da plaquinha
+
+
+T = Tela()
+TELA_PINOS = ["VCC", "GND", "CS", "RESET", "DC", "SDI(MOSI)", "SCK", "LED", "SDO(MISO)",
+              "T_CLK", "T_CS", "T_DIN", "T_DO", "T_IRQ"]
+TELA_GPIO = {"VCC": "3V3", "GND": "GND", "CS": "IO47", "RESET": "IO9", "DC": "IO14", "SDI(MOSI)": "IO11",
+             "SCK": "IO12", "LED": "IO36", "SDO(MISO)": "IO13"}
+# Os pinos do toque não são usados (a tela não tem toque). Os quatro que caem
+# em cima da pilha são cortados rente ao plástico; o T_IRQ fica, só para firmar.
+TELA_PINOS_CORTADOS = (10, 11, 12, 13)
+
+
+# ---------------------------------------------------------------------------
+# Teclado 3×4 de teclas de plástico (o do anúncio; o mesmo da Adafruit 3845).
+# Coordenadas próprias: de frente, a aba dos contatos embaixo.
+# ---------------------------------------------------------------------------
+@dataclass(frozen=True)
+class Teclado:
+    largura: float = 51.4                    # o corpo preto (o anúncio diz 51,4; a Adafruit, 51,0)
+    altura: float = 64.2                     # o corpo preto, sem a aba
+    aba: tuple = (36.2, 5.3)                 # a aba verde dos contatos: largura e quanto sai do corpo
+    furos_aba: int = 9                       # 9 furos a 2,54 mm; os 7 do meio são os do teclado
+    furos_aba_do_corpo: float = 3.2          # da borda do corpo até a fileira de furos
+    espessura: float = 9.7                   # de trás até o topo das teclas
+    base: float = 3.5                        # de trás até o topo da aba de fora (onde ficam os 4 furos)
+    plato: float = 5.5                       # de trás até o topo da parte crespa
+    plato_margem: tuple = (2.0, 3.25)        # da borda do corpo até a parte crespa: dos lados, em cima e embaixo
+    passo: tuple = (14.25, 13.38)            # entre as teclas: de lado e de cima para baixo
+    tecla: float = 7.8                       # o topo da tecla
+    furos: tuple = (46.4, 59.7)              # os 4 furos dos cantos (não são usados)
+
+
+K = Teclado()
+TECLAS = [["1", "2", "3"], ["4", "5", "6"], ["7", "8", "9"], ["*", "0", "#"]]
+# Os 9 furos da aba, da esquerda para a direita (de frente). O firmware aprende
+# qual fio é qual ("teclado aprender"), então a ordem não importa. Os três pinos
+# que acordam a ESP32 (IO15, IO16, IO17) ficam nos furos da tecla 3.
+TECLADO_ABA = [None, "IO37", "IO15", "IO17", "IO40", "IO16", "IO39", "IO38", None]
+GPIO_VERDE, GPIO_VERMELHO = "IO35", "IO21"
+
 # ---------------------------------------------------------------------------
 # Espessuras (Z), de trás para a frente
 # ---------------------------------------------------------------------------
 FUNDO = 1.5                  # a parede de trás
 FRENTE = 1.5                 # a parede da frente
 PAREDE = 1.8                 # as paredes dos lados
-VAO_COMP = 3.3               # do fundo até os componentes da LILYGO (o mais alto, o USB-C, tem 3,21)
-FOLGA_PILHA = 0.5            # entre a pilha e a placa da frente
-PCB_ESP = 1.2                # a placa de circuito
-TELA_APOIO = 2.0             # entre a placa e a plaquinha da tela (sem o plástico da barra da tela)
+VAO_COMP = 3.5               # do fundo até os componentes da LILYGO (o mais alto, o USB-C, tem 3,21)
+FOLGA_PILHA = 0.6            # entre a pilha e a PCB
+PCB_ESP = 0.8                # a PCB da frente
+ARO = 0.8                    # a aba da frente que cobre a borda do vidro
+FOLGA_VIDRO = 0.2
 
 Z_LILYGO_COMP = FUNDO + VAO_COMP                       # face dos componentes da LILYGO (virada para trás)
 Z_LILYGO_PILHA = Z_LILYGO_COMP + L.espessura           # face do lado da pilha (virada para a frente)
-Z_PILHA = Z_LILYGO_PILHA + L.bateria_fundo             # o ponto mais alto da pilha
-Z_PCB = Z_PILHA + FOLGA_PILHA                          # face de trás da placa de circuito
+Z_PILHA = Z_LILYGO_PILHA + L.pilha_altura              # o ponto mais alto da pilha
+Z_PCB = Z_PILHA + FOLGA_PILHA                          # face de trás da PCB
 Z_PCB_FRENTE = Z_PCB + PCB_ESP
+Z_TELA = Z_PCB_FRENTE + T.barra_plastico               # face de trás da plaquinha da tela (apoiada no plástico da barra)
+Z_TELA_FRENTE = Z_TELA + T.pcb
+Z_VIDRO = Z_TELA_FRENTE + T.lcd                        # a frente do vidro
+Z_TOPO = Z_VIDRO + FOLGA_VIDRO + ARO                   # a face da frente da caixa
+Z_FRENTE_DENTRO = Z_TOPO - FRENTE
 
-
-@dataclass(frozen=True)
-class Tela:
-    """Tela 2,4" SPI ILI9341 (LCDWiki MSP2401, sem toque, com cartão micro SD atrás)"""
-    largura: float = 42.72
-    altura: float = 77.18
-    pcb: float = 1.6
-    vidro_alt: float = 60.26
-    vidro_esp: float = 2.2 + 0.5             # vidro + fita
-    area_larg: float = 36.72
-    area_alt: float = 48.96
-    pinos_da_borda: float = 2.0              # CONFERIR: da fileira de pinos até a borda da plaquinha
-    vidro_da_borda_pinos: float = (77.18 - 60.26) / 2
-    imagem_do_vidro: float = (60.26 - 48.96) / 2
-    furos: tuple = (3.0, 4.96)               # furos Ø3,2: da borda comprida e da curta
-    sd_altura: float = 1.8                   # CONFERIR: a peça mais alta atrás
-
-
-T = Tela()
-Z_TELA = Z_PCB_FRENTE + TELA_APOIO                     # face de trás da plaquinha da tela
-Z_VIDRO = Z_TELA + T.pcb + T.vidro_esp                 # frente do vidro
-Z_FRENTE_DENTRO = Z_VIDRO + 0.25
-Z_TOPO = Z_FRENTE_DENTRO + FRENTE
-
-# A barra fêmea de perna longa: encaixa nos pinos da LILYGO (assenta no plástico
-# dela) e as pernas sobem até a placa de circuito
+# A barra fêmea de perna longa ("empilhável"): encaixa nos pinos da LILYGO,
+# assenta no plástico deles, e as pernas sobem até a PCB
 FEMEA_ALTURA = 8.5
 Z_FEMEA0 = Z_LILYGO_PILHA + L.barra_plastico
 Z_FEMEA1 = Z_FEMEA0 + FEMEA_ALTURA
-FEMEA_PERNA_MIN = Z_PCB_FRENTE - Z_FEMEA1 + 0.6        # a perna precisa passar a placa e sobrar um pouco
+FEMEA_PERNA_MIN = Z_PCB_FRENTE - Z_FEMEA1 + 0.5        # a perna precisa passar a PCB e sobrar para a solda
+
+# O teclado fica colado na PCB com fita dupla face de espuma (1 a 1,5 mm), que
+# também o separa das soldas das barras, que ficam embaixo dele
+FITA_ESPUMA = 1.5
+Z_TECLADO = Z_PCB_FRENTE + FITA_ESPUMA                 # as costas do teclado
+Z_TECLAS = Z_TECLADO + K.espessura
 
 # ---------------------------------------------------------------------------
-# Em X (de frente)
+# Em X e Y (de frente)
 # ---------------------------------------------------------------------------
-CAV_X0 = 0.0
-CAV_X1 = 46.3                # a largura de dentro
+CAV_X0, CAV_Y0 = 0.0, 0.0
+FOLGA_TECLADO = 0.5          # de cada lado do teclado, na abertura da frente
+CAV_X1 = K.largura + 2 * FOLGA_TECLADO                 # a largura de dentro: a do teclado
+MEIO_X = (CAV_X0 + CAV_X1) / 2
 FOLGA = 0.3
-PCB_X0, PCB_X1 = CAV_X0 + FOLGA, CAV_X1 - FOLGA
-# A LILYGO de costas fica encostada na parede da esquerda: os USB-C saem por ela.
-LILYGO_X = CAV_X0 + 0.34                               # a borda (de frente) da esquerda da LILYGO
-TELA_X = (CAV_X0 + CAV_X1 - T.largura) / 2
-TELA_CX = TELA_X + T.largura / 2
 
-# ---------------------------------------------------------------------------
-# O teclado (PROVISÓRIO até chegarem as medidas): as teclas e a borracha do
-# teclado 3×4 do Felipe, sobre contatos desenhados na placa
-# ---------------------------------------------------------------------------
-@dataclass(frozen=True)
-class Teclado:
-    passo_x: float = 14.0                    # entre os centros das teclas, de lado
-    passo_y: float = 11.0                    # entre os centros das fileiras
-    tecla: tuple = (12.0, 8.0)               # o tamanho da tecla (de frente)
-    contato: float = 6.0                     # o diâmetro do contato na placa (embaixo da pastilha da borracha)
-    altura: float = 8.0                      # da placa até o topo da tecla (borracha + tecla)
-    provisorio: bool = True
+# O teclado, embaixo. A aba dele fica escondida pelo queixo da frente.
+TECLADO_X0 = MEIO_X - K.largura / 2
+TECLADO_Y0 = 0.7 + K.aba[1]                            # a borda de baixo do corpo
+TECLADO_Y1 = TECLADO_Y0 + K.altura
+ABA_Y = TECLADO_Y0 - K.furos_aba_do_corpo              # a fileira de furos da aba
+JANELA_TECLADO = (CAV_X0, TECLADO_Y0 - 0.8, CAV_X1, TECLADO_Y1 + 1.0)    # a abertura da frente
 
+# Os botões verde e vermelho (chaves tácteis 6×6), entre o teclado e a tela.
+# Ficam perto das bordas: no meio as pernas deles cairiam em cima da pilha.
+BOTAO = 6.0
+CHAVE_TACTIL_ALTURA = 5.0                              # da PCB até o topo do botãozinho (chave 6 × 6 × 5 mm)
+BOTOES_Y = TECLADO_Y1 + 5.4
+BOTOES_X = (7.0, CAV_X1 - 7.0)                         # verde, vermelho
 
-K = Teclado()
-TECLAS = [["1", "2", "3"], ["4", "5", "6"], ["7", "8", "9"], ["*", "0", "#"]]
-# a matriz: cada fileira e cada coluna num pino (os mesmos da montagem na placa ilhada)
-GPIO_FILEIRA = ["IO15", "IO38", "IO39", "IO40"]        # 1 2 3 / 4 5 6 / 7 8 9 / * 0 #
-GPIO_COLUNA = ["IO17", "IO37", "IO16"]                 # 1 4 7 * / 2 5 8 0 / 3 6 9 #
-GPIO_VERDE, GPIO_VERMELHO = "IO35", "IO21"
+# A tela, em cima, com os pinos para baixo
+TELA_X = MEIO_X - T.largura / 2
+TELA_Y0 = BOTOES_Y + BOTAO / 2 + 0.4                   # a borda de baixo da plaquinha
+TELA_Y1 = TELA_Y0 + T.altura
+TELA_PINOS_Y = TELA_Y0 + T.pinos_v
+VIDRO_Y = (TELA_Y0 + T.vidro_v[0], TELA_Y0 + T.vidro_v[1])
+IMAGEM_X = (TELA_X + T.imagem_u[0], TELA_X + T.imagem_u[1])
+IMAGEM_Y = (TELA_Y0 + T.imagem_v[0], TELA_Y0 + T.imagem_v[1])
+CAV_Y1 = TELA_Y1 + 2.0                                 # em cima da tela descem as duas linguetas da frente
 
-# ---------------------------------------------------------------------------
-# Em Y (de baixo para cima): as teclas, os botões, a tela; a LILYGO fica com a
-# ponta de cima logo abaixo do alto-falante
-# ---------------------------------------------------------------------------
-PCB_Y0 = 5.4                 # a borda de baixo da placa (embaixo: os pilares dos parafusos)
-TECLA_Y0 = PCB_Y0 + 1.5 + K.tecla[1] / 2               # centro da fileira de baixo (* 0 #)
-TECLAS_Y = [TECLA_Y0 + K.passo_y * (3 - i) for i in range(4)]   # fileiras 1 2 3 .. * 0 #
-TECLAS_X = [TELA_CX + K.passo_x * (j - 1) for j in range(3)]
-BOTOES_Y = TECLAS_Y[0] + K.passo_y                     # verde e vermelho, em cima do 1 e do 3
-BOTAO = 6.0                  # chave táctil 6×6
-TELA_BASE = BOTOES_Y + BOTAO / 2 + 0.5
-TELA_TOPO = TELA_BASE + T.altura
-TELA_PINOS_Y = TELA_BASE + T.pinos_da_borda            # a tela de cabeça para baixo: os pinos embaixo
-VIDRO_BASE = TELA_BASE + T.vidro_da_borda_pinos
-VIDRO_TOPO = VIDRO_BASE + T.vidro_alt
-IMAGEM_BASE = VIDRO_BASE + T.imagem_do_vidro
-IMAGEM_TOPO = IMAGEM_BASE + T.area_alt
-CAV_Y0 = 0.0
-CAV_Y1 = TELA_TOPO + 0.4
+# A LILYGO de costas, encostada na parede da direita (por onde saem os USB-C),
+# com a ponta da ESP32 para baixo. As barras dela ficam embaixo do teclado e
+# acabam logo abaixo dos botões.
+LILYGO_X = CAV_X1 - 0.34 - L.largura                   # a borda da esquerda (de frente)
+LILYGO_Y = 24.0                                        # a ponta de baixo (a da ESP32)
 
-# Alto-falante 3525 em pé no topo, virado para a grade da parede de cima, embaixo da ponta da tela
-FALANTE = (35.0, 25.0, 4.6)                  # largura (X), altura (Z), espessura (Y)
-FALANTE_X0 = (CAV_X0 + CAV_X1 - FALANTE[0]) / 2
-FALANTE_AR = 2.5                             # na frente do cone, até a parede (passa a lingueta da frente)
-FALANTE_Y = CAV_Y1 - FALANTE_AR - FALANTE[2]  # face de trás
-LILYGO_Y = FALANTE_Y - 1.1 - L.altura        # a ponta de baixo (do modem) da LILYGO (o berço do falante no meio)
-PCB_Y1 = FALANTE_Y - 0.5                     # a placa acaba antes do alto-falante
+# A PCB da frente: do queixo até logo acima dos pinos da tela, com uma língua
+# embaixo, que passa por baixo da aba do teclado. Quem põe a PCB no lugar são as
+# barras da LILYGO, então ela fica a 0,6 mm das paredes (a da direita tem um
+# rebaixo de 0,3 mm: a fileira J2 fica perto demais da borda para estreitar a PCB).
+FOLGA_PCB = 0.6
+REBAIXO_DIREITA = 0.3
+PCB_X0, PCB_X1 = CAV_X0 + FOLGA_PCB, CAV_X1 + REBAIXO_DIREITA - FOLGA_PCB
+PCB_Y0 = 5.8                                           # embaixo, nos cantos, ficam os pilares dos parafusos
+PCB_Y1 = TELA_PINOS_Y + 2.4
+LINGUA = (9.5, 0.7, CAV_X1 - 9.5, PCB_Y0)              # x0, y0, x1, y1
+
+# Alto-falante 3525 em pé no topo, virado para a grade da parede de cima,
+# embaixo da ponta da tela. A calha aceita até 6 mm de espessura.
+FALANTE = (35.0, 25.0, 6.0)                  # largura (X), altura (Z), espessura máxima (Y)
+FALANTE_X0 = MEIO_X - FALANTE[0] / 2
+FALANTE_AR = 2.0                             # na frente do cone, até a parede (ali descem as linguetas da frente)
+FALANTE_Y = CAV_Y1 - FALANTE_AR - FALANTE[2] - 0.2     # o fundo da calha
 # Microfone 9767 (Ø9,7 × 6,7) embaixo, deitado, virado para a parede de baixo
 MIC_D, MIC_L = 9.7, 6.7
-MIC_X, MIC_Z = (CAV_X0 + CAV_X1) / 2, 13.0
+MIC_X, MIC_Z = MEIO_X, 13.0
 
 
 def lilygo_para_tijolo(x: float, y: float):
-    """coordenadas da LILYGO (componentes para você) → X, Y do Tijolo (ela de costas: espelha em X)"""
-    return LILYGO_X + (L.largura - x), LILYGO_Y + y
+    """coordenadas da LILYGO (componentes para você, ESP32 em cima) → X, Y do Tijolo
+    (ela de costas e com a ESP32 para baixo: vira em torno do eixo X)"""
+    return LILYGO_X + x, LILYGO_Y + (L.altura - y)
 
 
 def caixa_lilygo(x0, y0, x1, y1):
@@ -224,51 +290,82 @@ def barra_de(gpio: str):
     raise KeyError(gpio)
 
 
-# A tela de cabeça para baixo: de frente, o pino 1 (VCC) fica à direita (com o
-# VCC à esquerda quando os pinos estão em cima, que é o normal). Com
-# TELA_ESPELHADA=1 (o VCC à direita com os pinos em cima), fica à esquerda.
-TELA_ESPELHADA = os.environ.get("TELA_ESPELHADA") == "1"
-TELA_PINOS = ["VCC", "GND", "CS", "RESET", "DC", "SDI(MOSI)", "SCK", "LED", "SDO(MISO)",
-              "T_CLK", "T_CS", "T_DIN", "T_DO", "T_IRQ"]
-TELA_GPIO = {"VCC": "3V3", "GND": "GND", "CS": "IO47", "RESET": "IO9", "DC": "IO14", "SDI(MOSI)": "IO11",
-             "SCK": "IO12", "LED": "IO36", "SDO(MISO)": "IO13"}
-
-
 def pino_tela(i: int):
-    """(X, Y) do pino i (1..14) da tela"""
-    sentido = 1 if TELA_ESPELHADA else -1
-    return TELA_CX + sentido * (i - 7.5) * 2.54, TELA_PINOS_Y
+    """(X, Y) do pino i (1..14) da tela: o 1 (VCC) à esquerda"""
+    return TELA_X + T.pino1_u + (i - 1) * 2.54, TELA_PINOS_Y
 
+
+def furo_aba(k: int):
+    """(X, Y) do furo k (1..9) da aba do teclado, da esquerda para a direita"""
+    return MEIO_X + (k - (K.furos_aba + 1) / 2) * 2.54, ABA_Y
+
+
+def tela_para_tijolo(u: float, v: float):
+    return TELA_X + u, TELA_Y0 + v
+
+
+# A pilha, de frente
+PILHA_X = lilygo_para_tijolo(L.pilha_x, 0)[0]
+PILHA_Y = (LILYGO_Y + L.altura - L.pilha_y[1], LILYGO_Y + L.altura - L.pilha_y[0])
+Z_PILHA_EIXO = Z_PILHA - L.pilha_raio
+
+
+def folga_sobre_a_pilha(x: float, y: float):
+    """Do ponto (x, y) na face de trás da PCB até a pilha embaixo dele, em mm
+    (None se ali não tem pilha). Serve para não deixar solda em cima da pilha."""
+    if not (PILHA_Y[0] - 1.0 <= y <= PILHA_Y[1] + 1.0):
+        return None
+    d = abs(x - PILHA_X)
+    if d >= L.pilha_raio:
+        return None
+    return Z_PCB - (Z_PILHA_EIXO + math.sqrt(L.pilha_raio ** 2 - d ** 2))
+
+
+SOLDA_ATRAS = 1.6            # quanto uma perna soldada e cortada pode passar atrás da PCB
+FOLGA_SOLDA_PILHA = 1.0      # e quanto tem de sobrar até a pilha
 
 # ---------------------------------------------------------------------------
-# As medidas que o Felipe confere (o guia mostra um formulário com elas)
+# As medidas para conferir com a peça na mão antes de imprimir e de encomendar
+# (chave, o que medir, o valor do projeto, quanto pode variar, de onde veio)
 # ---------------------------------------------------------------------------
 MEDIDAS = [
-    ("pino_lilygo", "LILYGO: quanto o pino da barra passa do plástico", "do lado da pilha", _mm(L.barra_pino)),
-    ("pilha", "LILYGO com a pilha: da face da placa até o ponto mais alto da pilha", "", _mm(L.bateria_fundo)),
-    ("tela_pinos", "Tela: da fileira de pinos até a borda da plaquinha", "do lado dos pinos", _mm(T.pinos_da_borda)),
-    ("tela_vidro", "Tela: da borda da plaquinha (lado dos pinos) até o começo do vidro", "", _mm(T.vidro_da_borda_pinos, 2)),
-    ("tela_imagem", "Tela: do começo do vidro até o começo da imagem", "com a tela acesa, mostrando branco",
-     _mm(T.imagem_do_vidro, 2)),
-    ("tela_sd", "Tela: a peça mais alta atrás", "normalmente o cartão micro SD; e diga de que lado fica", _mm(T.sd_altura)),
-    ("falante", "Alto-falante: largura × altura × espessura", "",
-     f"{_mm(FALANTE[0], 0)} × {_mm(FALANTE[1], 0)} × {_mm(FALANTE[2])}"),
-    ("mic", "Microfone: diâmetro × altura", "", f"{_mm(MIC_D)} × {_mm(MIC_L)}"),
+    ("teclado_largura", "Teclado: largura do corpo preto", f"{_mm(K.largura)} mm", "de 51,0 a 51,8",
+     "anúncio (51,4) e Adafruit (51,0)"),
+    ("teclado_altura", "Teclado: comprimento do corpo preto, sem a aba verde", f"{_mm(K.altura)} mm", "de 63,6 a 64,8",
+     "foto do anúncio (69,3 com a aba)"),
+    ("teclado_espessura", "Teclado: espessura, de trás até o topo das teclas", f"{_mm(K.espessura)} mm", "até 11",
+     "Adafruit 3845"),
+    ("pilha", "LILYGO com a pilha: da face da placa (lado da pilha) até o ponto mais alto da pilha",
+     f"{_mm(L.pilha_altura)} mm, no máximo", f"até {_mm(L.pilha_altura)}", "modelo 3D oficial: de 18,1 a 18,9"),
+    ("tela_vcc", "Tela: de frente, com os pinos para baixo, o VCC é o pino da esquerda", "sim", "tem de ser sim",
+     "desenho da LCDWiki"),
+    ("falante", "Alto-falante: largura × altura × espessura",
+     f"{_mm(FALANTE[0], 0)} × {_mm(FALANTE[1], 0)} × até {_mm(FALANTE[2], 0)} mm", "largura até 35,4; altura até 25,4",
+     "nome da peça (3525)"),
+    ("chave", "Chave táctil (os botões verde e vermelho): altura, da base até o topo do botãozinho",
+     f"{_mm(CHAVE_TACTIL_ALTURA)} mm", "de 4,5 a 5,2", "tamanho comum (6 × 6 × 5 mm)"),
+    ("perna", "Barra fêmea de perna longa: comprimento da perna", f"{math.ceil(FEMEA_PERNA_MIN)} mm ou mais",
+     f"mínimo {_mm(FEMEA_PERNA_MIN)}", "conta deste projeto"),
 ]
 
 
 def resumo() -> str:
     j1a, j1b = pino_barra("J1", 1), pino_barra("J1", 16)
     j2a = pino_barra("J2", 1)
+    lx0, ly0, lx1, ly1 = caixa_lilygo(0, 0, L.largura, L.altura)
     linhas = [
-        f"LILYGO (de costas): X {LILYGO_X:.2f}..{LILYGO_X + L.largura:.2f}, Y {LILYGO_Y:.2f}..{LILYGO_Y + L.altura:.2f}",
-        f"barras: J1 em X {j1a[0]:.2f}, J2 em X {j2a[0]:.2f}, Y {j1b[1]:.2f}..{j1a[1]:.2f}",
-        f"placa de circuito: X {PCB_X0:.2f}..{PCB_X1:.2f}, Y {PCB_Y0:.2f}..{PCB_Y1:.2f} "
-        f"({PCB_X1 - PCB_X0:.1f} × {PCB_Y1 - PCB_Y0:.1f} mm, {PCB_ESP} mm)",
-        f"tela: X {TELA_X:.2f}..{TELA_X + T.largura:.2f}, Y {TELA_BASE:.2f}..{TELA_TOPO:.2f}, pinos em Y {TELA_PINOS_Y:.2f}",
-        f"teclas: fileiras em Y {', '.join(f'{y:.1f}' for y in TECLAS_Y)}; botões em Y {BOTOES_Y:.1f}",
-        f"Z: LILYGO {Z_LILYGO_COMP:.2f}..{Z_LILYGO_PILHA:.2f}, pilha até {Z_PILHA:.2f}, placa {Z_PCB:.2f}..{Z_PCB_FRENTE:.2f}, "
-        f"tela {Z_TELA:.2f}, vidro {Z_VIDRO:.2f}, topo {Z_TOPO:.2f}",
+        f"LILYGO (de costas, ESP32 para baixo): X {lx0:.2f}..{lx1:.2f}, Y {ly0:.2f}..{ly1:.2f}",
+        f"barras: J1 em X {j1a[0]:.2f}, J2 em X {j2a[0]:.2f}, Y {j1a[1]:.2f}..{j1b[1]:.2f}",
+        f"pilha: eixo em X {PILHA_X:.2f}, Y {PILHA_Y[0]:.2f}..{PILHA_Y[1]:.2f}, topo em Z {Z_PILHA:.2f}",
+        f"PCB: X {PCB_X0:.2f}..{PCB_X1:.2f}, Y {LINGUA[1]:.2f}..{PCB_Y1:.2f} "
+        f"({PCB_X1 - PCB_X0:.1f} × {PCB_Y1 - LINGUA[1]:.1f} mm, {PCB_ESP} mm)",
+        f"teclado: X {TECLADO_X0:.2f}..{TECLADO_X0 + K.largura:.2f}, Y {TECLADO_Y0:.2f}..{TECLADO_Y1:.2f}, "
+        f"furos da aba em Y {ABA_Y:.2f}",
+        f"botões: Y {BOTOES_Y:.2f}, X {BOTOES_X[0]:.2f} e {BOTOES_X[1]:.2f}",
+        f"tela: X {TELA_X:.2f}..{TELA_X + T.largura:.2f}, Y {TELA_Y0:.2f}..{TELA_Y1:.2f}, pinos em Y {TELA_PINOS_Y:.2f}, "
+        f"imagem Y {IMAGEM_Y[0]:.2f}..{IMAGEM_Y[1]:.2f}",
+        f"Z: LILYGO {Z_LILYGO_COMP:.2f}..{Z_LILYGO_PILHA:.2f}, pilha até {Z_PILHA:.2f}, PCB {Z_PCB:.2f}..{Z_PCB_FRENTE:.2f}, "
+        f"tela {Z_TELA:.2f}, vidro {Z_VIDRO:.2f}, frente {Z_TOPO:.2f}, teclas {Z_TECLAS:.2f}",
         f"barra fêmea: {Z_FEMEA0:.2f}..{Z_FEMEA1:.2f}, perna de pelo menos {FEMEA_PERNA_MIN:.1f} mm",
         f"caixa por fora: {CAV_X1 - CAV_X0 + 2 * PAREDE:.1f} × {CAV_Y1 - CAV_Y0 + 2 * PAREDE:.1f} × {Z_TOPO:.1f} mm",
     ]
