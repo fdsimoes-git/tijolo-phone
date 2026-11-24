@@ -365,7 +365,7 @@ def montar():
     # a borda de cima do teclado, na serigrafia: é por ela que se acerta o teclado na hora de colar
     # (dos lados ele fica rente às bordas da PCB)
     yb = P.TECLADO_Y1 + 0.25
-    for bx0, bx1 in ((2.0, 10.6), (24.0, 48.0)):
+    for bx0, bx1 in ((2.0, 10.6), (25.0, 46.0)):          # sem encostar nos nomes J1 e J2
         pl.linha([(bx0, yb), (bx1, yb)], F, 0.2)
     pl.texto("BORDA DE CIMA DO TECLADO", 36.0, yb + 1.0, tam=0.8)
 
@@ -657,7 +657,7 @@ def lista_de_pecas(pl):
 
 
 def resumo_drc(drc):
-    """(erros, avisos, sem ligação, texto dos erros): ignora os avisos de biblioteca e de serigrafia"""
+    """(erros, avisos, sem ligação, texto dos erros): só ignora os avisos de biblioteca (os footprints vêm do código)"""
     with open(drc, encoding="utf-8") as f:
         texto = f.read()
     erros, avisos = [], []
@@ -666,8 +666,7 @@ def resumo_drc(drc):
         if not m:
             continue
         tipo = m.group(1)
-        if tipo in ("lib_footprint_issues", "lib_footprint_mismatch", "silk_over_copper", "silk_overlap",
-                    "text_height", "text_thickness"):
+        if tipo in ("lib_footprint_issues", "lib_footprint_mismatch"):
             continue
         (erros if "Severity: error" in bloco else avisos).append(bloco.strip())
     u = re.search(r"\*\* Found (\d+) unconnected pads \*\*", texto)
