@@ -26,6 +26,7 @@ ARTIFACT = "https://claude.ai/artifact/CuJ8r7VZzr5Dn8WH7geubx"
 
 with open(os.path.join(AQUI, "placa", "placa.py"), encoding="utf-8") as _f:
     VERSAO_PCB = re.search(r'^VERSAO = "([^"]+)"', _f.read(), re.M).group(1)
+ETIQUETA = VERSAO_PCB.split()[0]             # "v3": vai no nome dos arquivos mandados na conversa (empacotar.py)
 
 LARGURA = P.CAV_X1 - P.CAV_X0 + 2 * P.PAREDE
 COMPRIMENTO = P.CAV_Y1 - P.CAV_Y0 + 2 * P.PAREDE
@@ -759,10 +760,10 @@ da tela.</p>
 {comprar}
 
 <h2 id="pcb">Encomendar a PCB</h2>
-<p>O arquivo é o <span class="mono">tijolo-pcb-gerbers-jlcpcb.zip</span>, que mandei na conversa. Ele também está no
-repositório, em <code>montagem/fabricar/pcb/</code>. <b>Use o arquivo novo</b>, feito com as suas medidas: na placa vem escrito
-<b>{VERSAO_PCB}</b>. No anterior (v2), os furos da aba do teclado ficavam 0,5 mm mais abaixo. Na JLCPCB (ou parecida), envie o
-zip do jeito que está e mude só a espessura:</p>
+<p>O arquivo é o <span class="mono">tijolo-pcb-{ETIQUETA}-gerbers-jlcpcb.zip</span>, que mandei na conversa. Ele também está
+no repositório, em <code>montagem/fabricar/pcb/</code>. <b>Use este, com {ETIQUETA} no nome</b>: foi feito com as suas medidas,
+e na placa vem escrito <b>{VERSAO_PCB}</b>. No anterior, sem {ETIQUETA} no nome, os furos da aba do teclado ficavam 0,5 mm mais
+abaixo: apague-o. Na JLCPCB (ou parecida), envie o zip do jeito que está e mude só a espessura:</p>
 <ul>
   <li>2 camadas, material FR-4;</li>
   <li><b>espessura da placa: 0,8 mm</b> (o padrão é 1,6; com 1,6 a frente da caixa não fecha);</li>
@@ -782,9 +783,10 @@ zip do jeito que está e mude só a espessura:</p>
 sem pinos soltos.</p>
 
 <h2 id="imprimir">Imprimir a caixa</h2>
-<p>Quatro arquivos STL, já virados do jeito de imprimir. Estão no <span class="mono">tijolo-caixa-3d.zip</span>, que mandei na
-conversa, e no repositório, em <code>montagem/fabricar/caixa/</code>. O zip leva um LEIA-ME com estas instruções para a
-gráfica 3D:</p>
+<p>Quatro arquivos STL, já virados do jeito de imprimir. Estão no <span class="mono">tijolo-caixa-3d-{ETIQUETA}.zip</span>,
+que mandei na conversa, e no repositório, em <code>montagem/fabricar/caixa/</code>. <b>Use este, com {ETIQUETA} no nome</b>: a
+caixa do zip anterior é {mm(P.Z_TOPO - SEM_MEDIR['espessura'])} mm mais fina e não fecha com a sua pilha. O zip leva um LEIA-ME
+com estas instruções para a gráfica 3D:</p>
 {imprimir}
 <p><b>Material</b>: PETG ou PLA. As linguetas da frente dobram para encaixar, e o PETG aguenta melhor. Camada de 0,2 mm,
 3 perímetros, 20% de preenchimento, <b>sem suportes</b>. Se os cantos do fundo levantarem da mesa, use aba (brim).</p>

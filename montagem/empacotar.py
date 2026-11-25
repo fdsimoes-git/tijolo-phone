@@ -4,9 +4,11 @@ Junta o que vai para a fábrica de placas e para a gráfica 3D:
     python3 empacotar.py     (da pasta montagem/; depois de placa/placa.py, caixa/caixa.py e guia.py)
 
 Sai em fabricar/ (esta fica no git: é o que alguém precisa para montar um Tijolo
-sem instalar o KiCad nem o CadQuery) e, em saida/, tijolo-caixa-3d.zip: os STL,
-os .step e um LEIA-ME para a gráfica 3D. Para a fábrica de placas vai direto o
-saida/placa/tijolo-pcb-gerbers-jlcpcb.zip.
+sem instalar o KiCad nem o CadQuery) e, em saida/, os dois arquivos de mandar,
+com a versão no nome (a mesma que vem escrita na PCB), para não confundir com
+os de uma versão anterior: tijolo-caixa-3d-v3.zip (os STL, os .step e um
+LEIA-ME para a gráfica 3D) e tijolo-pcb-v3-gerbers-jlcpcb.zip (para a fábrica
+de placas; é uma cópia do saida/placa/tijolo-pcb-gerbers-jlcpcb.zip).
 """
 import os
 import re
@@ -23,6 +25,9 @@ GUIA = "https://claude.ai/artifact/CuJ8r7VZzr5Dn8WH7geubx"
 
 with open(os.path.join(AQUI, "placa", "placa.py"), encoding="utf-8") as _f:
     VERSAO_PCB = re.search(r'^VERSAO = "([^"]+)"', _f.read(), re.M).group(1)
+ETIQUETA = VERSAO_PCB.split()[0]             # "v3": vai no nome dos arquivos de mandar
+ZIP_CAIXA = f"tijolo-caixa-3d-{ETIQUETA}.zip"
+ZIP_PCB = f"tijolo-pcb-{ETIQUETA}-gerbers-jlcpcb.zip"
 
 LARGURA = P.CAV_X1 - P.CAV_X0 + 2 * P.PAREDE
 COMPRIMENTO = P.CAV_Y1 - P.CAV_Y0 + 2 * P.PAREDE
@@ -114,6 +119,7 @@ def leia_me_da_grafica():
     fundo = medidas_stl(os.path.join(SAIDA, "caixa", "fundo.stl"))
     botao = medidas_stl(os.path.join(SAIDA, "caixa", "botao_verde.stl"))
     return f"""TIJOLO - caixa para imprimir em 3D
+Versão {ETIQUETA}, de {P.MEDIDO_EM}, feita com as medidas das peças: a caixa fechada tem {mm(P.Z_TOPO)} mm de espessura.
 
 Quatro peças, já viradas do jeito de imprimir:
 
@@ -167,15 +173,21 @@ def empacotar():
     with open(os.path.join(FABRICAR, "LEIA-ME.md"), "w", encoding="utf-8") as f:
         f.write(leia_me())
 
-    z2 = os.path.join(SAIDA, "tijolo-caixa-3d.zip")
+    for velho in os.listdir(SAIDA):                    # os zips de mandar de uma versão anterior
+        if velho.endswith(".zip"):
+            os.remove(os.path.join(SAIDA, velho))
+    pasta = ZIP_CAIXA[:-len(".zip")]
+    z2 = os.path.join(SAIDA, ZIP_CAIXA)
     with zipfile.ZipFile(z2, "w", zipfile.ZIP_DEFLATED) as z:
-        z.writestr("tijolo-caixa-3d/LEIA-ME.txt", leia_me_da_grafica())
-        z.write(os.path.join(FABRICAR, "tijolo.png"), "tijolo-caixa-3d/tijolo.png")
+        z.writestr(f"{pasta}/LEIA-ME.txt", leia_me_da_grafica())
+        z.write(os.path.join(FABRICAR, "tijolo.png"), f"{pasta}/tijolo.png")
         for arq in STL:
-            z.write(os.path.join(SAIDA, "caixa", arq), f"tijolo-caixa-3d/{arq}")
+            z.write(os.path.join(SAIDA, "caixa", arq), f"{pasta}/{arq}")
         for arq in STEP:
-            z.write(os.path.join(SAIDA, "caixa", arq), f"tijolo-caixa-3d/step/{arq}")
-    return [z2, os.path.join(SAIDA, "placa", "tijolo-pcb-gerbers-jlcpcb.zip")]
+            z.write(os.path.join(SAIDA, "caixa", arq), f"{pasta}/step/{arq}")
+    z1 = os.path.join(SAIDA, ZIP_PCB)
+    shutil.copyfile(os.path.join(SAIDA, "placa", "tijolo-pcb-gerbers-jlcpcb.zip"), z1)
+    return [z2, z1]
 
 
 if __name__ == "__main__":
