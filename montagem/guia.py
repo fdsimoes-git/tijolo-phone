@@ -24,11 +24,16 @@ SAIDA = os.path.join(AQUI, "saida", "guia")
 CDN = "https://cdn.jsdelivr.net/npm/three@0.128.0"
 ARTIFACT = "https://claude.ai/artifact/CuJ8r7VZzr5Dn8WH7geubx"
 
+with open(os.path.join(AQUI, "placa", "placa.py"), encoding="utf-8") as _f:
+    VERSAO_PCB = re.search(r'^VERSAO = "([^"]+)"', _f.read(), re.M).group(1)
+
 LARGURA = P.CAV_X1 - P.CAV_X0 + 2 * P.PAREDE
 COMPRIMENTO = P.CAV_Y1 - P.CAV_Y0 + 2 * P.PAREDE
 PCB_L, PCB_A = P.PCB_X1 - P.PCB_X0, P.PCB_Y1 - P.LINGUA[1]
 # o desenho anterior (placa ilhada com 14 chaves e fios), para comparar: espessura, largura, comprimento, fios
 ANTES = dict(espessura=38.17, largura=50.3, comprimento=141.2, fios=19)
+# a versão anterior desta montagem, feita só com as medidas dos fabricantes (antes de o Felipe medir as peças)
+SEM_MEDIR = dict(espessura=35.44, pilha=19.6, teclas=3.36, aba_botao=1.6, calha=35.4, teclado_altura=64.2)
 
 
 def esc(s):
@@ -108,7 +113,7 @@ kbd, code { font-family: var(--mono); font-size: .9em; background: var(--cartao)
 button.chip { font: 500 13px/1 var(--texto); color: var(--tinta); background: var(--cartao); border: 1px solid var(--linha);
   border-radius: 999px; padding: 8px 12px; cursor: pointer; }
 button.chip[aria-pressed="true"] { background: var(--tinta); color: var(--papel); border-color: var(--tinta); }
-button.chip:focus-visible, button.botao:focus-visible, input:focus-visible { outline: 2px solid var(--cobre); outline-offset: 2px; }
+button.chip:focus-visible, input:focus-visible { outline: 2px solid var(--cobre); outline-offset: 2px; }
 
 /* figuras */
 figure { margin: 22px 0; }
@@ -145,6 +150,8 @@ td.num, th.num { text-align: right; white-space: nowrap; }
 .tem { color: var(--ok); font-weight: 600; white-space: nowrap; }
 .comprar { color: var(--cobre); font-weight: 600; white-space: nowrap; }
 .total td { font-weight: 600; border-top: 2px solid var(--tinta); }
+tr.fora td { background: var(--alerta-fundo); }
+tr.fora td:first-child { box-shadow: inset 4px 0 0 var(--alerta); }
 
 /* passos */
 .passo { margin-top: 56px; }
@@ -162,20 +169,6 @@ ol.faz li { margin: 8px 0; }
 .confere label { cursor: pointer; }
 .confere input:checked + label { color: var(--tinta-2); text-decoration: line-through; text-decoration-color: var(--linha); }
 
-/* formulário das medidas */
-form.medidas { display: grid; gap: 4px; margin: 16px 0; max-width: 760px; }
-.campo { display: grid; grid-template-columns: minmax(0, 1fr) 150px; gap: 12px; align-items: center;
-  padding: 10px 0; border-bottom: 1px solid var(--linha); }
-.campo label { font-size: 15px; }
-.campo .pequeno { display: block; }
-.campo input { font: 500 15px var(--mono); padding: 7px 9px; border: 1px solid var(--linha);
-  border-radius: 6px; background: var(--cartao); color: var(--tinta); width: 100%; }
-@media (max-width: 520px) { .campo { grid-template-columns: minmax(0, 1fr); } }
-button.botao { font: 600 15px var(--texto); background: var(--verde); color: var(--papel); border: 0; border-radius: 8px;
-  padding: 11px 18px; cursor: pointer; justify-self: start; margin-top: 12px; }
-textarea#medidas-texto { width: 100%; min-height: 190px; font: 13px/1.5 var(--mono); padding: 10px; border-radius: 8px;
-  border: 1px solid var(--linha); background: var(--cartao); color: var(--tinta); margin-top: 8px; }
-.copiado { font-size: 14px; color: var(--ok); }
 @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
 """
 
@@ -402,11 +395,22 @@ def tabela_ligacoes():
 
 
 def pagina():
-    z_perna = P.FEMEA_PERNA_MIN
     ganho = ANTES["espessura"] - P.Z_TOPO
+    aba_botao = P.BOTAO_ABA
+    # como o teclado fica em relação às bordas da PCB (é por elas que se acerta na hora de colar)
+    sobra_esq = P.TECLADO_X0 - P.PCB_X0
+    sobra_dir = P.PCB_X1 - (P.TECLADO_X0 + P.K.largura)
+
+    def lado_teclado(sobra, lado):
+        if abs(sobra) < 0.06:
+            return f"o lado {lado} fica rente à borda da PCB"
+        if sobra > 0:
+            return f"do lado {lado} sobram {mm(sobra)} mm de PCB"
+        return f"do lado {lado} o teclado passa {mm(-sobra)} mm da PCB"
+    lados_teclado = f"{lado_teclado(sobra_esq, 'esquerdo')} e {lado_teclado(sobra_dir, 'direito')}"
     sem_suporte = P.Z_TOPO - (P.Z_PCB - (P.Z_FEMEA1 + 0.1))        # a PCB logo acima das barras fêmea comuns
 
-    indice = [("conferir", "", "Confira antes"), ("medidas", "", "As medidas revisadas"), ("espessura", "", "A espessura e a PCB"),
+    indice = [("conferir", "", "As suas medidas"), ("medidas", "", "As medidas revisadas"), ("espessura", "", "A espessura e a PCB"),
               ("comprar", "", "O que comprar"), ("pcb", "", "Encomendar a PCB"), ("imprimir", "", "Imprimir a caixa"),
               ("cabos", "", "Cabos e fios"),
               ("lilygo", "1", "Preparar a LILYGO"), ("pecas", "2", "As peças da PCB"), ("tela", "3", "A tela"),
@@ -473,23 +477,25 @@ onde a ponta de cima apoia em duas torres.</div>""",
          "Atrás, os pinos soldados não passam de 1,5 mm."]))
 
     passos.append(passo(4, "barras", "As barras fêmea", "20 minutos · sem pilha", f"""
-<p>As barras são soldadas com tudo no lugar. Assim a PCB fica na altura certa, apoiada nos pilares do fundo, qualquer que seja
-o comprimento das pernas.</p>
+<p>As barras são soldadas com tudo no lugar. Assim a PCB fica na altura certa, apoiada nos pilares do fundo.</p>
+<div class="nota">As pernas das suas barras têm {mm(P.FEMEA_PERNA)} mm. Com a PCB no lugar, a ponta de cada perna passa só uns
+{mm(P.FEMEA_SOBRA)} mm da face da frente. É pouco, mas basta: os furos têm metal por dentro e a solda desce por eles.</div>
 <ol class="faz">
   <li>Ponha a LILYGO no fundo impresso, com as barras fêmea encaixadas e <b>sem a pilha</b>. A ponta da ESP32 fica para baixo
   (o lado do microfone) e os USB-C, para a direita. Dois pilares do fundo têm pino, que entra nos furos dela. Os parafusos
   ficam para o passo 6.</li>
   <li>Desça a PCB: as 32 pernas entram nas duas fileiras de furos (J1 e J2). A PCB apoia nos três pilares da esquerda e nas
   nervuras de baixo e da direita. A ponta de cima da tela apoia nas duas torres, ao lado do lugar do alto-falante.</li>
-  <li>Solde, pela frente, a <b>primeira e a última perna de cada barra</b>: 4 soldas. Cuidado para não encostar o ferro na
-  borda da caixa.</li>
+  <li>Solde, pela frente, a <b>primeira e a última perna de cada barra</b>: 4 soldas. Encoste o ferro na ponta da perna e na
+  ilha ao mesmo tempo e deixe a solda entrar no furo. Cuidado para não encostar o ferro na borda da caixa.</li>
   <li>Tire tudo do fundo e separe a PCB da LILYGO, puxando reto: as barras saem presas na PCB. Solde as outras 28 pernas na
   bancada.</li>
-  <li>Corte as 32 pernas rente à PCB: o teclado vai por cima delas.</li>
+  <li>O teclado vai por cima dessas soldas. Com as suas barras não sobra ponta para cortar; se alguma passar de 1 mm, corte
+  rente.</li>
   <li>Cole uma tira de fita isolante por cima de cada fileira de soldas.</li>
 </ol>""",
         ["A PCB estava assentada nos pilares e a tela, nas torres, quando as 4 primeiras pernas foram soldadas.",
-         "As 32 pernas estão soldadas e cortadas rente.",
+         "As 32 pernas estão soldadas, com a solda fechando a volta de cada ponta, e nenhuma passa de 1 mm.",
          "As duas fileiras de soldas estão cobertas com fita isolante."]))
 
     passos.append(passo(5, "teclado", "O teclado", "20 minutos", f"""
@@ -498,15 +504,16 @@ o comprimento das pernas.</p>
 <ol class="faz">
   <li>Cole a fita de espuma nos dois retângulos marcados FITA DE ESPUMA e tire o papel de cima.</li>
   <li>Segure o teclado acima da PCB, sem encostar, com a aba verde para baixo, sobre a língua da PCB. Acerte a posição: a
-  borda de cima do teclado fica na linha marcada <b>BORDA DE CIMA DO TECLADO</b> e os lados ficam rentes às bordas da PCB. Os
-  9 furos da aba caem em cima dos 9 furos da PCB.</li>
+  borda de cima do teclado fica na linha marcada <b>BORDA DE CIMA DO TECLADO</b>; {lados_teclado}. Os 9 furos da aba caem em
+  cima dos 9 furos da PCB.</li>
   <li>Encoste e aperte para colar. A fita não deixa corrigir depois.</li>
   <li>Passe uma perninha de fio nu (uns 8 mm; perna de resistor serve) em cada um dos <b>7 furos do meio</b>, atravessando a
   aba e a PCB. Solde em cima, na aba, e embaixo, atrás da PCB. Corte as sobras.</li>
 </ol>
 <div class="nota">Os dois furos das pontas não ligam em nada: pode soldar também, só para firmar. A ordem dos 7 fios não
-importa, porque o Tijolo aprende qual é qual (passo 7).</div>""",
-        ["A borda de cima do teclado está na linha da PCB e os lados, rentes às bordas.",
+importa, porque o Tijolo aprende qual é qual (passo 7). Se os furos da aba ficarem até 1 mm acima ou abaixo dos da PCB, não tem
+problema: as perninhas de fio acompanham.</div>""",
+        [f"A borda de cima do teclado está na linha da PCB; {lados_teclado}.",
          "As 7 perninhas do meio estão soldadas na aba e atrás da PCB.",
          "Nenhuma perninha encosta na vizinha."]))
 
@@ -566,12 +573,36 @@ pilha, puxe o conjunto da PCB reto para cima: ele desencaixa dos pinos e a LILYG
          "Os dois botões fazem clic quando apertados e voltam sozinhos.",
          "O cabo USB-C entra até o fim pela abertura da direita."]))
 
-    # ------------------------------------------------------------------ as medidas para conferir
-    assert len(P.MEDIDAS) == 8                   # o texto diz "oito"
-    campos_html = "".join(
-        f"<div class='campo'><label for='m-{i}'>{esc(t)}<span class='pequeno'>no projeto: {esc(v)} · serve: {esc(faixa)}</span></label>"
-        f"<input id='m-{i}' name='{i}' placeholder='sua medida' inputmode='decimal' autocomplete='off'></div>"
-        for i, t, v, faixa, fonte in P.MEDIDAS)
+    # ------------------------------------------------------------------ as medidas que o Felipe mandou
+    falta_falante = "falante" in P.FALTA_MEDIR
+    falta_html = "" if not falta_falante else f"""<div class="aviso"><b>Falta uma medida: a espessura do alto-falante</b> (e a altura).
+O campo do guia só aceitava um número (falha minha) e veio {mm(P.FALANTE[0])}, que eu li como a largura. A calha da caixa aceita até {mm(P.FALANTE[2], 0)} mm de espessura e
+até {P.FALANTE_ALTURA_MAX} mm de altura. Meça antes de imprimir a caixa: se passar disso, eu ajusto a calha. A PCB não depende
+disso e já pode ser encomendada.</div>"""
+    suas_medidas = tabela(
+        ["O que você mediu", "Sua medida", "O que mudou nos arquivos"],
+        [("Teclado: largura do corpo", f"{mm(P.K.largura)} mm",
+          f"Na faixa. Sobra {mm(P.FOLGA_TECLADO)} mm de cada lado na abertura da frente; a largura da caixa não mudou."),
+         ("Teclado: comprimento, sem a aba", f"{mm(P.K.altura)} mm",
+          f"Na faixa. É {mm(SEM_MEDIR['teclado_altura'] - P.K.altura)} mm mais curto que no desenho: na PCB, os 9 furos da aba "
+          f"subiram esse tanto, e a abertura da frente encolheu o mesmo."),
+         ("Teclado: espessura", f"{mm(P.K.espessura)} mm",
+          f"Na faixa. As teclas passam {mm(P.Z_TECLAS - P.Z_TOPO)} mm da frente da caixa (eram {mm(SEM_MEDIR['teclas'])})."),
+         {"classe": "fora", "celulas": (
+          "Pilha na LILYGO: da placa até o topo", f"<b>{mm(P.L.pilha_altura)} mm</b>",
+          f"<b>Fora da faixa</b>: eu tinha reservado {mm(SEM_MEDIR['pilha'])}. A PCB, a tela e a frente subiram "
+          f"{mm(P.L.pilha_altura - SEM_MEDIR['pilha'])} mm, e a caixa passou de {mm(SEM_MEDIR['espessura'])} para "
+          f"{mm(P.Z_TOPO)} mm de espessura. Entre a pilha e a PCB continuam {mm(P.FOLGA_PILHA)} mm de folga.")},
+         ("Tela: VCC à esquerda", "sim (você escreveu 1)", "Nada muda."),
+         ("Alto-falante", f"{mm(P.FALANTE[0])} mm (a largura)",
+          f"Na faixa. A calha passou de {mm(SEM_MEDIR['calha'])} para {mm(P.FALANTE[0] + 0.4)} mm."
+          + (" <b>Faltam a altura e a espessura.</b>" if falta_falante else "")),
+         ("Chave táctil: altura", f"{mm(P.CHAVE_TACTIL_ALTURA)} mm",
+          f"Na faixa. A aba do botão impresso passou de {mm(SEM_MEDIR['aba_botao'])} para {mm(aba_botao)} mm, para o botão "
+          f"não ficar frouxo."),
+         ("Barra fêmea: perna", f"{mm(P.FEMEA_PERNA)} mm",
+          f"Serve, no limite: o mínimo é {P.PERNA_MIN_TXT}. A ponta da perna passa {mm(P.FEMEA_SOBRA)} mm da PCB, o que basta "
+          f"para soldar (<a href='#barras'>passo 4</a>).")])
 
     medidas_revisadas = tabela(
         ["Peça", "O que eu uso", "Conferido com"],
@@ -581,9 +612,8 @@ pilha, puxe o conjunto da PCB reto para cima: ele desencaixa dos pinos e a LILYG
           f"{mm(P.L.furo_fixacao_d, 2)}; USB-C com {mm(P.L.usb_altura, 2)} mm de altura; conector SOLAR com 6,25 (por isso sai)",
           "modelo 3D oficial, desenho com cotas (DXF) e foto oficial do lado da pilha"),
          ("Pilha no suporte",
-          f"suporte com {mm(P.L.suporte_altura)} mm; o topo da pilha fica entre 18,1 e 18,9 mm da placa; reservei "
-          f"{mm(P.L.pilha_altura)}",
-          "modelo 3D oficial; <b>falta a sua régua</b>"),
+          f"suporte com {mm(P.L.suporte_altura)} mm; o topo da pilha fica a {mm(P.L.pilha_altura)} mm da placa",
+          "<b>a sua medida</b> (pelo modelo 3D oficial eu esperava 19 ou menos)"),
          ("Tela 2,4\"",
           f"plaquinha de {mm(P.T.largura, 2)} × {mm(P.T.altura, 2)} mm; os pinos embaixo, a {mm(P.T.pinos_v, 2)} mm da borda, com "
           f"o VCC à esquerda; vidro de {mm(P.T.vidro_v[0], 2)} a {mm(P.T.vidro_v[1], 2)} mm; imagem de "
@@ -593,11 +623,16 @@ pilha, puxe o conjunto da PCB reto para cima: ele desencaixa dos pinos e a LILYG
          ("Teclado 3×4",
           f"corpo de {mm(P.K.largura)} × {mm(P.K.altura)} mm; aba de {mm(P.K.aba[0])} × {mm(P.K.aba[1])} mm com 9 furos a 2,54; "
           f"{mm(P.K.espessura)} mm de espessura",
-          "foto com cotas do anúncio e ficha da Adafruit 3845; <b>falta a sua régua</b>"),
+          "<b>as suas medidas</b> (corpo e espessura); a aba, pela foto com cotas do anúncio"),
          ("Alto-falante e microfone",
-          f"{mm(P.FALANTE[0], 0)} × {mm(P.FALANTE[1], 0)} mm, até {mm(P.FALANTE[2], 0)} de espessura; Ø {mm(P.MIC_D)} × "
+          f"{mm(P.FALANTE[0])} × {mm(P.FALANTE[1], 0)} mm, até {mm(P.FALANTE[2], 0)} de espessura; Ø {mm(P.MIC_D)} × "
           f"{mm(P.MIC_L)} mm",
-          "os nomes das peças (3525 e 9767); <b>falta a sua régua</b>")])
+          "a largura do alto-falante é <b>a sua medida</b>; o resto, pelos nomes das peças (3525 e 9767)"
+          + ("; <b>faltam a altura e a espessura</b>" if falta_falante else "")),
+         ("Chaves tácteis e barras fêmea",
+          f"chave com {mm(P.CHAVE_TACTIL_ALTURA)} mm de altura; barra com perna de {mm(P.FEMEA_PERNA)} mm e corpo de "
+          f"{mm(P.FEMEA_ALTURA)} mm",
+          "<b>as suas medidas</b> (a altura do corpo da barra é a comum)")])
 
     camadas = tabela(
         ["Montagem", "Espessura", "Fios soltos"],
@@ -611,14 +646,15 @@ pilha, puxe o conjunto da PCB reto para cima: ele desencaixa dos pinos e a LILYG
         [(f"<b>PCB da frente</b> ({mm(PCB_L)} × {mm(PCB_A)} mm, 2 camadas, <b>0,8 mm</b>): veja <a href='#pcb'>Encomendar a PCB</a>",
           "5 (o mínimo)", "<span class='comprar'>encomendar</span>"),
          (f"<b>Barra fêmea de perna longa</b> (\"empilhável\", a dos shields de Arduino), 2,54 mm, 1 × 16. Perna de "
-          f"{mm(z_perna)} mm ou mais: as de 11 e de 12 mm servem. Quatro de 1 × 8 também servem.",
-          "2", "<span class='comprar'>comprar</span>"),
+          f"{P.PERNA_MIN_TXT} mm ou mais: as suas, de {mm(P.FEMEA_PERNA)}, servem. Quatro de 1 × 8 também servem.",
+          "2", "<span class='tem'>tem</span>"),
          ("<b>Fita dupla face de espuma</b>, de 1 a 1,5 mm de espessura", "20 cm", "<span class='comprar'>comprar</span>"),
          ("Capacitor cerâmico de 100 pF (C4, opcional)", "1", "<span class='comprar'>se quiser</span>"),
          ("Fita isolante comum (ou Kapton)", "um pouco", "<span class='comprar'>se não tiver</span>"),
          ("Impressão 3D: fundo, frente e dois botões: veja <a href='#imprimir'>Imprimir a caixa</a>", "1 jogo",
           "<span class='comprar'>encomendar</span>"),
-         ("Chave táctil 6 × 6 × 5 mm (kit Eletrogate)", "2", "<span class='tem'>tem</span>"),
+         (f"Chave táctil 6 × 6 mm, com {mm(P.CHAVE_TACTIL_ALTURA)} mm de altura (kit Eletrogate)", "2",
+          "<span class='tem'>tem</span>"),
          ("Capacitores: 100 µF e 100 nF (kit Eletrogate)", "1 + 2", "<span class='tem'>tem</span>"),
          ("Parafusos M2 de cabeça chata: 2 de 8 mm (fechar a caixa) e 2 de 5 mm (prender a LILYGO). Veja se o seu kit "
           "sortido tem esses comprimentos.", "4", "<span class='tem'>tem</span>"),
@@ -677,19 +713,18 @@ pilha, puxe o conjunto da PCB reto para cima: ele desencaixa dos pinos e a LILYG
   alto-falante e o microfone.</p>
 </header>
 
-<h2 id="conferir">Confira antes de imprimir e de encomendar</h2>
-<p>Os arquivos estão prontos, feitos com as medidas dos fabricantes. Oito coisas só dá para confirmar com a peça na mão. Meça
-com régua ou paquímetro, em milímetros. Se tudo cair na faixa, pode imprimir e encomendar. Se algo sair, escreva o que mediu,
-copie o texto e me mande: eu refaço os arquivos.</p>
-<form class="medidas" id="form-medidas">
-{campos_html}
-<button class="botao" type="submit">Copiar as medidas</button>
-<textarea id="medidas-texto" readonly aria-label="As medidas, para copiar"></textarea>
-<span class="copiado" id="copiado" aria-live="polite"></span>
-</form>
+<h2 id="conferir">As suas medidas</h2>
+<p>Refiz a PCB e a caixa com as medidas que você mandou em {P.MEDIDO_EM}. Sete estavam na faixa. A pilha passou: ela chega a
+{mm(P.L.pilha_altura)} mm da placa e eu tinha reservado {mm(SEM_MEDIR['pilha'])}. Tudo o que fica acima dela subiu
+{mm(P.L.pilha_altura - SEM_MEDIR['pilha'])} mm.</p>
+{suas_medidas}
+{falta_html}
+<p>Li o "1" que você escreveu na pergunta da tela como "sim": de frente, com os pinos para baixo, o VCC é o pino da esquerda.
+Se não for isso, me avise antes de encomendar a PCB.</p>
 
 <h2 id="medidas">As medidas revisadas</h2>
-<p>Refiz todas as medidas a partir dos desenhos dos fabricantes. Três coisas mudaram em relação ao desenho anterior:</p>
+<p>As medidas vêm dos desenhos dos fabricantes; onde você mediu a peça, vale a sua medida. Três coisas mudaram em relação ao
+desenho anterior, o da placa ilhada:</p>
 <ul>
   <li><b>A tela fica com os pinos para baixo</b>, que é a posição normal dela: a imagem não precisa girar. O vidro não fica no
   meio da plaquinha, e o soquete do cartão SD, atrás, tem {mm(P.T.sd_altura)} mm de altura.</li>
@@ -715,8 +750,8 @@ da tela.</p>
     <p>Para afinar mais, só trocando a 18650 por uma bateria chata de lítio. Isso pede dessoldar o suporte da pilha da LILYGO e
     soldar os fios da bateria nova. Não recomendo agora: é mexer na parte mais delicada da placa para ganhar uns
     {mm(P.Z_TOPO - sem_suporte, 0)} mm. Fica como um passo para depois, com o Tijolo já funcionando.</p>
-    <p>Se a sua pilha medir menos que os {mm(P.L.pilha_altura)} mm que reservei (o modelo 3D aponta para 19 ou menos), eu tiro a
-    diferença da caixa.</p>
+    <p>A sua pilha chega a {mm(P.L.pilha_altura)} mm da placa, {mm(P.L.pilha_altura - SEM_MEDIR['pilha'])} mm a mais do que
+    eu tinha reservado. Por isso a caixa passou de {mm(SEM_MEDIR['espessura'])} para {mm(P.Z_TOPO)} mm.</p>
   </div>
 </div>
 
@@ -725,8 +760,9 @@ da tela.</p>
 
 <h2 id="pcb">Encomendar a PCB</h2>
 <p>O arquivo é o <span class="mono">tijolo-pcb-gerbers-jlcpcb.zip</span>, que mandei na conversa. Ele também está no
-repositório, em <code>montagem/fabricar/pcb/</code>. Na JLCPCB (ou parecida), envie o zip do jeito que está e mude só a
-espessura:</p>
+repositório, em <code>montagem/fabricar/pcb/</code>. <b>Use o arquivo novo</b>, feito com as suas medidas: na placa vem escrito
+<b>{VERSAO_PCB}</b>. No anterior (v2), os furos da aba do teclado ficavam 0,5 mm mais abaixo. Na JLCPCB (ou parecida), envie o
+zip do jeito que está e mude só a espessura:</p>
 <ul>
   <li>2 camadas, material FR-4;</li>
   <li><b>espessura da placa: 0,8 mm</b> (o padrão é 1,6; com 1,6 a frente da caixa não fecha);</li>
@@ -772,14 +808,18 @@ gráfica 3D:</p>
 <h2 id="problemas">Se algo não funcionar</h2>
 <ul>
   <li><b>A PCB não assenta nos pilares</b>: veja se sobrou algum dos 4 pinos da tela sem cortar e se alguma perna atrás passou
-  de 1,5 mm. Se a pilha encostar na PCB, me mande a medida dela.</li>
+  de 1,5 mm. Se um capacitor de trás bater no suporte da pilha, deite-o um pouco para o lado. Se a pilha encostar na PCB, me
+  mande a medida dela.</li>
   <li><b>A frente não fecha</b>: confira a espessura da PCB (tem de ser 0,8 mm), a tela assentada nas duas torres e os cabos,
   que não podem ficar em cima dos pilares.</li>
   <li><b>A tela fica branca ou sem imagem</b>: confira o firmware (<code>MONTAGEM_PLACA 2</code>) e as soldas dos 9 primeiros
   pinos. Se a imagem aparecer de cabeça para baixo, mude <code>TELA_ROTACAO</code> no <code>config.h</code>.</li>
   <li><b>Uma tecla, ou uma fileira inteira, não responde</b>: é uma perninha da aba do teclado. Refaça a solda e ensine o
   teclado de novo.</li>
-  <li><b>Um botão fica sempre apertado</b>: a chave táctil é mais alta que 5,2 mm. Lixe um pouco a base do botão impresso.</li>
+  <li><b>As pontas das pernas das barras não aparecem na frente da PCB</b> (passo 4): uma barra fêmea não está encaixada até o
+  fim nos pinos da LILYGO, ou a LILYGO não assentou nos 4 pilares.</li>
+  <li><b>Um botão fica sempre apertado</b>: a chave táctil é mais alta que {mm(P.CHAVE_TACTIL_ALTURA + P.BOTAO_JOGO - 0.1)} mm.
+  Lixe um pouco a aba do botão impresso, por cima.</li>
   <li><b>Sem som, ou ninguém ouve você</b>: os cabos podem estar trocados entre SPEK e MIC. No microfone, confira o lado do
   +.</li>
   <li><b>Sinal fraco</b>: a antena tem de estar no conector LTE. O conector GNSS, ao lado, é do GPS, que a sua placa não
@@ -798,6 +838,8 @@ gráfica 3D:</p>
   <li>Teclado: a ficha da <a href="https://www.adafruit.com/product/3845">Adafruit 3845</a>, a da
   <a href="https://www.universal-solder.ca/product/3x4-matrix-keypad-hard-keys-black/">Universal Solder</a> e a foto com cotas
   do anúncio.</li>
+  <li>Medidos por você em {P.MEDIDO_EM}: o corpo e a espessura do teclado, a altura da pilha na LILYGO, a chave táctil, a perna
+  das barras fêmea e a largura do alto-falante.</li>
 </ul>
 <p class="pequeno">A PCB, a caixa e este guia saem dos scripts da pasta <code>montagem/</code> do repositório (projeto.py,
 placa/placa.py, caixa/caixa.py e guia.py). Mudando uma medida em projeto.py, tudo se refaz igual.</p>
@@ -819,33 +861,6 @@ JS = r"""
     c.checked = ler('tijolo2-' + c.dataset.confere, '0') === '1';
     c.addEventListener('change', function () { gravar('tijolo2-' + c.dataset.confere, c.checked ? '1' : '0'); });
   });
-
-  // ---------- medidas ----------
-  var form = document.getElementById('form-medidas');
-  var saida = document.getElementById('medidas-texto');
-  form.querySelectorAll('.campo input').forEach(function (i) {
-    i.value = ler('tijolo2-medida-' + i.name, '');
-    i.addEventListener('input', function () { gravar('tijolo2-medida-' + i.name, i.value); });
-  });
-  function texto() {
-    var linhas = ['Medidas do Tijolo (mm):'];
-    form.querySelectorAll('.campo').forEach(function (c) {
-      var l = c.querySelector('label'), i = c.querySelector('input');
-      var nome = l.childNodes[0].textContent.trim();
-      linhas.push('- ' + nome + ': ' + (i.value.trim() || 'não medi'));
-    });
-    return linhas.join('\n');
-  }
-  function atualizar() { saida.value = texto(); }
-  form.addEventListener('input', atualizar);
-  form.addEventListener('submit', function (e) {
-    e.preventDefault(); atualizar();
-    var aviso = document.getElementById('copiado');
-    function feito() { aviso.textContent = 'Copiado. Cole na conversa.'; }
-    function selecionar() { saida.focus(); saida.select(); aviso.textContent = 'Selecionei o texto: copie com Ctrl+C (ou toque e segure).'; }
-    try { navigator.clipboard.writeText(saida.value).then(feito, selecionar); } catch (err) { selecionar(); }
-  });
-  atualizar();
 
   // ---------- a vista 3D ----------
   var caixa = document.getElementById('vista');

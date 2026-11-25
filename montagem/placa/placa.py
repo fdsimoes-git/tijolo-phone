@@ -36,7 +36,7 @@ from roteador import FRENTE, TRAS, Grade, SemCaminho  # noqa: E402
 
 SAIDA = os.path.join(os.path.dirname(AQUI), "saida", "placa")
 NOME = "tijolo-pcb"
-VERSAO = "v2 · 2026-11"
+VERSAO = "v3 · 2026-11"
 LIB = "/usr/share/kicad/footprints"
 OX, OY = 100.0, 200.0                      # onde a placa fica na folha do KiCad
 TRILHA, FOLGA, VIA, VIA_FURO = 0.3, 0.2, 0.6, 0.3

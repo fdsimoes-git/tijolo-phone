@@ -9,7 +9,9 @@ os .step e um LEIA-ME para a gráfica 3D. Para a fábrica de placas vai direto o
 saida/placa/tijolo-pcb-gerbers-jlcpcb.zip.
 """
 import os
+import re
 import shutil
+import struct
 import zipfile
 
 import projeto as P
@@ -18,6 +20,9 @@ AQUI = os.path.dirname(os.path.abspath(__file__))
 SAIDA = os.path.join(AQUI, "saida")
 FABRICAR = os.path.join(AQUI, "fabricar")
 GUIA = "https://claude.ai/artifact/CuJ8r7VZzr5Dn8WH7geubx"
+
+with open(os.path.join(AQUI, "placa", "placa.py"), encoding="utf-8") as _f:
+    VERSAO_PCB = re.search(r'^VERSAO = "([^"]+)"', _f.read(), re.M).group(1)
 
 LARGURA = P.CAV_X1 - P.CAV_X0 + 2 * P.PAREDE
 COMPRIMENTO = P.CAV_Y1 - P.CAV_Y0 + 2 * P.PAREDE
@@ -32,8 +37,23 @@ def mm(v, casas=1):
     return f"{v:.{casas}f}".replace(".", ",")
 
 
+def medidas_stl(caminho):
+    """(largura, comprimento, altura) de um STL binário, em mm"""
+    with open(caminho, "rb") as f:
+        dados = f.read()
+    n = struct.unpack_from("<I", dados, 80)[0]
+    assert 84 + 50 * n == len(dados), caminho
+    mn, mx = [1e9] * 3, [-1e9] * 3
+    for i in range(n):
+        v = struct.unpack_from("<9f", dados, 84 + 50 * i + 12)
+        for k in range(9):
+            mn[k % 3] = min(mn[k % 3], v[k])
+            mx[k % 3] = max(mx[k % 3], v[k])
+    return tuple(b - a for a, b in zip(mn, mx))
+
+
 def leia_me():
-    medidas = "\n".join(f"| {oque} | {valor} | {faixa} |" for _, oque, valor, faixa, _ in P.MEDIDAS)
+    medidas = "\n".join(f"| {oque} | {valor} | {faixa} | {fonte} |" for _, oque, valor, faixa, fonte in P.MEDIDAS)
     return f"""# Tijolo: arquivos para fabricar
 
 O passo a passo da montagem está no [guia]({GUIA}). Aqui estão os arquivos que vão para a fábrica de placas e para a
@@ -43,13 +63,14 @@ gráfica 3D. Eles saem dos scripts da pasta `montagem/`; não edite à mão.
 
 ## Antes de imprimir e de encomendar
 
-As medidas vêm dos desenhos dos fabricantes. Estas só dá para confirmar com a peça na mão:
+As medidas vêm dos desenhos dos fabricantes. Estas só dá para confirmar com a peça na mão, e os arquivos daqui foram feitos
+com as peças do Felipe:
 
-| O que medir | No projeto | Serve |
-|---|---|---|
+| O que medir | No projeto | Serve | De onde veio |
+|---|---|---|---|
 {medidas}
 
-Se alguma sair da faixa, mude a medida em `montagem/projeto.py` e gere tudo de novo.
+Se alguma peça sua sair da faixa, mude a medida em `montagem/projeto.py` e gere tudo de novo.
 
 ## A PCB (`pcb/`)
 
@@ -61,13 +82,13 @@ Se alguma sair da faixa, mude a medida em `montagem/projeto.py` e gere tudo de n
 | `pcb-frente.svg` e `pcb-tras.svg` | as duas faces, para conferir na bancada |
 
 Para encomendar (JLCPCB ou parecida): 2 camadas, FR-4, **espessura de 0,8 mm**, 5 unidades, acabamento HASL sem chumbo. A
-placa mede {mm(PCB_L)} × {mm(PCB_A)} mm. Com a espessura padrão, de 1,6 mm, a caixa não fecha.
+placa mede {mm(PCB_L)} × {mm(PCB_A)} mm e leva escrito **{VERSAO_PCB}**. Com a espessura padrão, de 1,6 mm, a caixa não fecha.
 
 | Na placa | Peça | Lado |
 |---|---|---|
-| J1, J2 | barra fêmea 1 × 16 de perna longa (empilhável), 2,54 mm, perna de {mm(P.FEMEA_PERNA_MIN)} mm ou mais | atrás; a solda é na frente |
+| J1, J2 | barra fêmea 1 × 16 de perna longa (empilhável), 2,54 mm, perna de {P.PERNA_MIN_TXT} mm ou mais | atrás; a solda é na frente |
 | TELA | a tela 2,4" ILI9341, pelos pinos dela (os 4 marcados com X são cortados antes) | frente |
-| VERDE, VERMELHO | chave táctil 6 × 6 × 5 mm, 4 pernas | frente |
+| VERDE, VERMELHO | chave táctil 6 × 6 mm, com {mm(P.CHAVE_TACTIL_ALTURA)} mm de altura, 4 pernas | frente |
 | C2 | capacitor eletrolítico de 100 µF, 10 V ou mais | atrás |
 | C1, C5 | capacitor cerâmico de 100 nF | atrás |
 | C4 | capacitor cerâmico de 100 pF (opcional) | atrás |
@@ -90,6 +111,8 @@ Parafusos: 2 M2 × 8 de cabeça chata fecham a caixa, por trás. Outros 2 M2 × 
 
 
 def leia_me_da_grafica():
+    fundo = medidas_stl(os.path.join(SAIDA, "caixa", "fundo.stl"))
+    botao = medidas_stl(os.path.join(SAIDA, "caixa", "botao_verde.stl"))
     return f"""TIJOLO - caixa para imprimir em 3D
 
 Quatro peças, já viradas do jeito de imprimir:
@@ -105,7 +128,8 @@ SEM SUPORTES em nenhuma peça. Se os cantos do fundo levantarem da mesa, usar ab
 
 Medidas, para conferir depois de imprimir:
   a caixa fechada tem {mm(LARGURA)} x {mm(COMPRIMENTO)} x {mm(P.Z_TOPO)} mm;
-  o fundo tem {mm(LARGURA)} x {mm(COMPRIMENTO)} x 30,1 mm;
+  o fundo tem {mm(fundo[0])} x {mm(fundo[1])} x {mm(fundo[2])} mm;
+  cada botão tem {mm(botao[0])} x {mm(botao[1])} x {mm(botao[2])} mm;
   as paredes têm {mm(P.PAREDE)} mm.
 
 A pasta step/ tem as mesmas peças em STEP, para quem quiser mexer no desenho

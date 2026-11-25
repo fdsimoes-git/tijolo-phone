@@ -1,10 +1,10 @@
 referência;o que é;valor;lado;x;y
-J1;barra fêmea 1×16 de perna longa (empilhável), 2,54 mm;perna de 10.5 mm ou mais;trás;20.35;31.23
-J2;barra fêmea 1×16 de perna longa (empilhável), 2,54 mm;perna de 10.5 mm ou mais;trás;50.80;31.23
+J1;barra fêmea 1×16 de perna longa (empilhável), 2,54 mm;perna de 10.9 mm ou mais;trás;20.35;31.23
+J2;barra fêmea 1×16 de perna longa (empilhável), 2,54 mm;perna de 10.9 mm ou mais;trás;50.80;31.23
 TELA;tela 2,4" ILI9341 (a sua), soldada pelos pinos;-;frente;9.69;81.00
 SW1;chave táctil 6×6 mm, 4 pernas (verde);5 mm de altura;frente;3.75;77.85
 SW2;chave táctil 6×6 mm, 4 pernas (vermelho);5 mm de altura;frente;42.15;77.85
-TECLADO;teclado 3×4 (o seu), colado com fita de espuma; a aba ligada por 7 perninhas de fio;-;frente;26.20;2.80
+TECLADO;teclado 3×4 (o seu), colado com fita de espuma; a aba ligada por 7 perninhas de fio;-;frente;26.20;3.30
 C2;capacitor eletrolítico 100 µF, 10 V ou mais (Ø até 6,3 mm);100 µF;trás;15.85;73.50
 C1;capacitor cerâmico 100 nF;100 nF;trás;17.30;78.80
 C4;capacitor cerâmico 100 pF;100 pF;trás;24.90;78.80

@@ -6,8 +6,8 @@ alto-falante e o do microfone) e a antena.
 
 ![O Tijolo montado](fabricar/tijolo.png)
 
-- **Para montar**: o passo a passo está no [guia](https://claude.ai/artifact/CuJ8r7VZzr5Dn8WH7geubx), com as medidas para
-  conferir, o que comprar, como encomendar a PCB, como imprimir e a vista 3D.
+- **Para montar**: o passo a passo está no [guia](https://claude.ai/artifact/CuJ8r7VZzr5Dn8WH7geubx), com as medidas das
+  peças, o que comprar, como encomendar a PCB, como imprimir e a vista 3D.
 - **Os arquivos prontos** estão em [`fabricar/`](fabricar/LEIA-ME.md): os Gerbers da PCB e os STL da caixa.
 - **Esta pasta** tem os scripts que geram a PCB, a caixa e o guia: mudando uma medida em `projeto.py`, tudo se refaz igual.
 
@@ -33,21 +33,21 @@ De trás para a frente (Z, em mm, a partir da face de fora do fundo):
 | 0 a 1,5 | o fundo da caixa |
 | 1,5 a 5,0 | os componentes da LILYGO (o mais alto, o USB-C, tem 3,2; o conector SOLAR, de 6,25, tem de sair) |
 | 5,0 a 6,6 | a placa da LILYGO |
-| 6,6 a 26,2 | a pilha 18650 no suporte (reservei 19,6 mm; o modelo 3D aponta para 18,1 a 18,9) |
-| 26,8 a 27,6 | a PCB da frente |
-| 30,1 a 34,4 | a tela, apoiada no plástico da barra de pinos dela |
-| 35,4 | a face da frente da caixa |
-| 38,8 | o topo das teclas (saem 3,4 mm da caixa) |
+| 6,6 a 26,6 | a pilha 18650 no suporte (20,0 mm, medidos; pelo modelo 3D eram de 18,1 a 18,9) |
+| 27,2 a 28,0 | a PCB da frente |
+| 30,5 a 34,8 | a tela, apoiada no plástico da barra de pinos dela |
+| 35,8 | a face da frente da caixa |
+| 39,7 | o topo das teclas (saem 3,9 mm da caixa) |
 
-A caixa tem 56,0 × 161,8 × 35,4 mm. Quem manda na espessura é a pilha: LILYGO mais pilha somam 21 mm e a tela soma 8. A
-PCB tira 2,7 mm em relação ao desenho anterior, de placa ilhada (38,2 mm), e acaba com os 19 fios. Para afinar mais, só
-trocando a 18650 por uma bateria chata (uns 26 mm), o que pede dessoldar o suporte.
+A caixa tem 56,0 × 161,8 × 35,8 mm. Quem manda na espessura é a pilha: LILYGO mais pilha somam 21,6 mm e a
+tela soma 8. A PCB tira 2,3 mm em relação ao desenho anterior, de placa ilhada (38,2 mm), e acaba com os 19 fios.
+Para afinar mais, só trocando a 18650 por uma bateria chata (uns 26 mm), o que pede dessoldar o suporte.
 
 ## Os arquivos
 
 | Arquivo | O que faz |
 |---|---|
-| `projeto.py` | Todas as medidas num lugar só: a LILYGO, a tela, o teclado, as alturas (Z), a PCB, a caixa, o alto-falante e o microfone. `MEDIDAS` lista o que conferir com a peça na mão. `python3 projeto.py` mostra um resumo. |
+| `projeto.py` | Todas as medidas num lugar só: a LILYGO, a tela, o teclado, as alturas (Z), a PCB, a caixa, o alto-falante e o microfone. `MEDIDAS` lista as que só dá para confirmar com a peça na mão, e a faixa que serve. `python3 projeto.py` mostra um resumo. |
 | `lilygo_pecas.json` | As caixas das peças da LILYGO, tiradas do modelo 3D oficial (T-A7670X-S3-Standard.step, de 26/08/2026): onde está cada peça e a altura dela, dos dois lados da placa. |
 | `placa/placa.py` | A PCB (KiCad 7, pelo `pcbnew`): põe as peças, traça as trilhas, enche o GND, roda o teste de regras e gera os Gerbers para a JLCPCB, a lista de peças e as imagens. Para se alguma solda ficar em cima da pilha. |
 | `placa/roteador.py` | O traçador de trilhas: grade de 0,2 mm, 2 camadas, vias, trechos a 0°, 45° e 90°. |
@@ -75,15 +75,19 @@ distâncias entre a caixa e as peças.
 
 ## As medidas e de onde vieram
 
+As peças do Felipe foram medidas em 24/11/2026 (na tabela, "medido"). Quem montar com peças de outra medida troca o valor
+em `projeto.py` e gera tudo de novo.
+
 | Peça | Medidas usadas | Fonte |
 |---|---|---|
 | LILYGO | placa 33,07 × 110,54 × 1,6 mm; duas barras de 16 pinos a 30,45 mm uma da outra, com o plástico do lado da pilha; 4 furos de Ø 2,55; suporte da pilha com 15 mm | modelo 3D oficial, desenho com cotas (DXF) e foto do lado da pilha, do [repositório da LILYGO](https://github.com/Xinyuan-LilyGO/LilyGo-Modem-Series/tree/main/dimensions/Standard) |
-| Pilha | topo a até 19,6 mm da face da placa | o modelo 3D dá de 18,1 a 18,9: **conferir** |
+| Pilha | topo a 20,0 mm da face da placa, mais 0,6 mm de folga até a PCB | medido (pelo modelo 3D eram de 18,1 a 18,9) |
 | Tela | plaquinha 42,72 × 77,18 mm; pinos a 2,00 mm da borda, o 1 (VCC) a 4,85 mm da esquerda; vidro de 10,41 a 70,67 mm; imagem 36,72 × 48,96 mm; soquete do cartão SD atrás, com 3,0 mm de altura | desenho do fabricante ([LCDWiki, MSP2401_Size.pdf](https://www.lcdwiki.com/res/MSP2402/MSP2401_Size.pdf), V1.0 de 15/04/2024) |
-| Teclado | corpo 51,4 × 64,2 mm; aba dos contatos 36,2 × 5,3 mm com 9 furos a 2,54 mm; espessura 9,7 mm | foto com cotas do anúncio e ficha da [Adafruit 3845](https://www.adafruit.com/product/3845) (o mesmo teclado): **conferir** |
-| Alto-falante | 35 × 25 mm, até 6 mm de espessura | nome da peça (3525): **conferir** |
+| Teclado | corpo 51,2 × 63,7 mm; aba dos contatos 36,2 × 5,3 mm com 9 furos a 2,54 mm; espessura 10,2 mm | corpo e espessura medidos; a aba, pela foto com cotas do anúncio e pela ficha da [Adafruit 3845](https://www.adafruit.com/product/3845) (o mesmo teclado) |
+| Alto-falante | 35,1 × 25 mm, até 6 mm de espessura | largura medida; altura e espessura pelo nome da peça (3525): **conferir** |
 | Microfone | Ø 9,7 × 6,7 mm | nome da peça (9767) |
-| Chaves tácteis | 6 × 6 mm, 5,0 mm de altura (serve de 4,5 a 5,2) | tamanho comum: **conferir** |
+| Chaves tácteis | 6 × 6 mm, 4,8 mm de altura (serve de 4,5 a 5,0) | medido |
+| Barras fêmea | perna de 10,9 mm (o mínimo é 10,9: a ponta passa 0,5 mm da PCB); corpo de 8,5 mm | perna medida; o corpo é o tamanho comum |
 
 ## A PCB
 

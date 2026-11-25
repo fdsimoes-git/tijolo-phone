@@ -10,7 +10,7 @@ O firmware é o **TijoloOS**, feito por fases:
 | 2 | Tela ILI9341 + teclado 3×4 (o 1 e o 3, segurados, fazem as vezes dos botões verde e vermelho): tela inicial, discador, chamadas, SMS recebidos, saldo, liga/desliga | pronta, testada na placa |
 | 3a | Menu, escrever SMS pelo teclado (multitoque), caixa de mensagens na memória do Tijolo (ler, responder, encaminhar, apagar, reenviar) | pronta, testada na placa |
 | 4 | **WhatsApp pela ponte**: um Android em casa, com o WhatsApp oficial, repassa as mensagens por SMS e devolve as respostas (app em [`ponte-android/`](ponte-android/README.md)) | pronta, falta testar na placa |
-| 4 | **Montagem final**: PCB da frente encaixada nos pinos da LILYGO, sem fios soltos, e caixa impressa em 3D ([`montagem/`](montagem/README.md)) | desenhada e conferida no computador; falta encomendar a PCB, imprimir a caixa e montar |
+| 4 | **Montagem final**: PCB da frente encaixada nos pinos da LILYGO, sem fios soltos, e caixa impressa em 3D ([`montagem/`](montagem/README.md)) | desenhada e conferida no computador, já com as medidas das peças do Felipe; falta encomendar a PCB, imprimir a caixa e montar |
 | 3b | Agenda de contatos (na memória do Tijolo), histórico de chamadas, despertador | depois |
 | — | Modo roteador (compartilhar o 4G por Wi-Fi) | opcional |
 
@@ -56,11 +56,11 @@ A tela divide o SPI com o cartão TF da placa (IO11/IO12); o firmware deixa o CS
 
 ## Montagem final (PCB e caixa)
 
-Para sair da protoboard: uma PCB encomendada (51,5 × 82,7 mm, 0,8 mm de espessura) encaixa direto nas duas barras de pinos da LILYGO e leva a tela, os botões verde e vermelho e a ligação do teclado 3×4, que entra inteiro. Não sobra fio solto: só os cabos do alto-falante e do microfone e a antena. Uma caixa impressa em 3D (56 × 162 × 35 mm) fecha tudo, com a antena colada por dentro, o alto-falante virado para uma grade em cima e o microfone embaixo.
+Para sair da protoboard: uma PCB encomendada (51,5 × 82,7 mm, 0,8 mm de espessura) encaixa direto nas duas barras de pinos da LILYGO e leva a tela, os botões verde e vermelho e a ligação do teclado 3×4, que entra inteiro. Não sobra fio solto: só os cabos do alto-falante e do microfone e a antena. Uma caixa impressa em 3D (56 × 162 × 36 mm) fecha tudo, com a antena colada por dentro, o alto-falante virado para uma grade em cima e o microfone embaixo.
 
 ![O Tijolo montado](montagem/fabricar/tijolo.png)
 
-- **O guia de montagem** ([página "Montagem do Tijolo"](https://claude.ai/artifact/CuJ8r7VZzr5Dn8WH7geubx), privada até ser compartilhada) tem as medidas para conferir antes de imprimir, o que comprar, como encomendar a PCB e imprimir a caixa, os 8 passos da montagem e a vista 3D.
+- **O guia de montagem** ([página "Montagem do Tijolo"](https://claude.ai/artifact/CuJ8r7VZzr5Dn8WH7geubx), privada até ser compartilhada) tem as medidas das peças, o que comprar, como encomendar a PCB e imprimir a caixa, os 8 passos da montagem e a vista 3D.
 - **Os arquivos prontos** estão em [`montagem/fabricar/`](montagem/fabricar/LEIA-ME.md): os Gerbers da PCB e os STL da caixa.
 - **Os scripts** que geram a PCB, a caixa e o guia estão em [`montagem/`](montagem/README.md).
 - **O firmware**: com `#define MONTAGEM_PLACA 2` no `config.h`, os botões passam a ser de verdade (verde no IO35, vermelho no IO21, que acorda a ESP32) e o teclado usa IO37, IO15, IO17, IO40, IO16, IO39 e IO38. A tela fica com os pinos para baixo, na rotação normal. Depois de gravar, ensine o teclado de novo (segure o 1 enquanto aparece "Ligando o modem…").

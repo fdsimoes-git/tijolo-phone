@@ -79,17 +79,18 @@ TORRE_Y = (CALHA_Y[0] + 0.5, CALHA_Y[1] - 0.2)
 # a antena do 4G (uma fita de 110,5 × 20 mm) cola na parede da esquerda, por dentro
 ANTENA_Y = (34.0, 145.5)
 
-# os botões verde e vermelho: chave táctil 6×6×5 e um botão impresso
+# os botões verde e vermelho: chave táctil 6×6 e um botão impresso
 CHAVE_ALTURA = P.CHAVE_TACTIL_ALTURA    # da face da PCB até o topo do botãozinho
 CHAVE_CORPO = 3.5
 BOTAO = (10.0, 5.0)                # o botão impresso, de frente
 FOLGA_BOTAO = 0.3
 ABA_BOTAO = 0.5
-ABA_ALT = 1.6                      # a aba do botão; sobram 0,3 mm até a frente (a chave pode ter até 5,2 mm)
 SAI_BOTAO = 1.0
-RECESSO_PINO = (4.6, 0.55)         # folgado: o botãozinho (Ø3,5) pode ficar até 0,5 mm fora do centro
+RECESSO_PINO = (4.6, P.BOTAO_RECESSO)   # folgado: o botãozinho (Ø3,5) pode ficar até 0,5 mm fora do centro
 Z_BOTAO0 = P.Z_PCB_FRENTE + CHAVE_ALTURA - RECESSO_PINO[1]
+ABA_ALT = P.BOTAO_ABA              # a aba do botão acompanha a altura da chave: solto, ele sobe 0,3 mm até a frente
 Z_POCO0 = P.Z_TELA_FRENTE + 0.3    # o poço do botão começa acima da plaquinha da tela
+assert 1.2 <= ABA_ALT <= 2.2 and abs(P.Z_FRENTE_DENTRO - (Z_BOTAO0 + ABA_ALT) - P.BOTAO_JOGO) < 0.006, ABA_ALT
 
 # a costela da frente que segura a PCB no lugar (entre os dois botões)
 COSTELA = (28.0, P.BOTOES_Y - 2.2, 38.0, P.BOTOES_Y + 1.8)
@@ -407,7 +408,7 @@ def miolo():
         x, ya = P.pino_barra(barra, 1)
         _, yb = P.pino_barra(barra, 16)
         v.append((f"barra {barra}", bloco(x - 1.27, ya - 1.27, zp, x + 1.27, yb + 1.27, P.Z_FEMEA1)))
-        v.append((f"pernas {barra}", bloco(x - 0.4, ya - 0.4, P.Z_FEMEA1, x + 0.4, yb + 0.4, P.Z_PCB_FRENTE + 1.0)))
+        v.append((f"pernas {barra}", bloco(x - 0.4, ya - 0.4, P.Z_FEMEA1, x + 0.4, yb + 0.4, P.Z_FEMEA1 + P.FEMEA_PERNA)))
         v.append((f"barra macho {barra}", bloco(x - 0.4, ya - 0.4, zp, x + 0.4, yb + 0.4, zp + P.L.barra_plastico + P.L.barra_pino)))
     # a PCB
     v.append(("PCB", pcb_solido()))

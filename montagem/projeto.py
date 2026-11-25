@@ -26,7 +26,10 @@ De onde vêm as medidas:
   - teclado: foto com cotas do anúncio (51,4 × 69,3 mm) e ficha da Adafruit
     3845, que é o mesmo teclado (70,0 × 51,0 × 9,7 mm);
   - alto-falante e microfone: os nomes das peças (3525 e 9767).
-As que só dá para confirmar com a peça na mão estão em MEDIDAS, no fim.
+As que só dá para confirmar com a peça na mão estão em MEDIDAS, no fim. O
+Felipe mediu as peças dele em 24/11/2026: o teclado (51,2 × 63,7 × 10,2), a
+pilha na LILYGO (20,0), a chave táctil (4,8), a perna da barra fêmea (10,9) e
+a largura do alto-falante (35,1). Esses valores já estão aqui.
 """
 import json
 import math
@@ -72,10 +75,10 @@ class Lilygo:
     pilha_y: tuple = (24.2, 89.2)            # a pilha de 65 mm, centralizada no suporte
     pilha_x: float = 16.81                   # o eixo da pilha
     pilha_raio: float = 9.3
-    # Da face da placa até o ponto mais alto da pilha. No modelo 3D o eixo da pilha
-    # fica a uns 9,0 a 9,5 mm da placa e a pilha tem de 18,2 a 18,6 mm: o topo dá
-    # entre 18,1 e 18,9. Reservo 19,6, com folga. CONFERIR com régua.
-    pilha_altura: float = 19.6
+    # Da face da placa até o ponto mais alto da pilha: 20,0, MEDIDO na placa do
+    # Felipe. Pelo modelo 3D eu esperava de 18,1 a 18,9 e tinha reservado 19,6:
+    # a medida de verdade deu mais, e é ela que vale.
+    pilha_altura: float = 20.0
     spek: tuple = (1.32, 10.49, 5.67, 14.24)     # conector SPK (SH 1.0, de pé, 4,47 de altura)
     mic: tuple = (1.41, 5.33, 5.76, 9.08)        # conector MIC
     barra_plastico: float = 2.54             # o plástico da barra, do lado da pilha
@@ -144,12 +147,12 @@ TELA_PINOS_CORTADOS = (10, 11, 12, 13)
 # ---------------------------------------------------------------------------
 @dataclass(frozen=True)
 class Teclado:
-    largura: float = 51.4                    # o corpo preto (o anúncio diz 51,4; a Adafruit, 51,0)
-    altura: float = 64.2                     # o corpo preto, sem a aba
+    largura: float = 51.2                    # o corpo preto: MEDIDO (o anúncio diz 51,4; a Adafruit, 51,0)
+    altura: float = 63.7                     # o corpo preto, sem a aba: MEDIDO (a foto do anúncio dava 64,2)
     aba: tuple = (36.2, 5.3)                 # a aba verde dos contatos: largura e quanto sai do corpo
     furos_aba: int = 9                       # 9 furos a 2,54 mm; os 7 do meio são os do teclado
     furos_aba_do_corpo: float = 3.2          # da borda do corpo até a fileira de furos
-    espessura: float = 9.7                   # de trás até o topo das teclas
+    espessura: float = 10.2                  # de trás até o topo das teclas: MEDIDO (a Adafruit diz 9,7)
     base: float = 3.5                        # de trás até o topo da aba de fora (onde ficam os 4 furos)
     plato: float = 5.5                       # de trás até o topo da parte crespa
     plato_margem: tuple = (2.0, 3.25)        # da borda do corpo até a parte crespa: dos lados, em cima e embaixo
@@ -195,6 +198,9 @@ FEMEA_ALTURA = 8.5
 Z_FEMEA0 = Z_LILYGO_PILHA + L.barra_plastico
 Z_FEMEA1 = Z_FEMEA0 + FEMEA_ALTURA
 FEMEA_PERNA_MIN = Z_PCB_FRENTE - Z_FEMEA1 + 0.5        # a perna precisa passar a PCB e sobrar para a solda
+FEMEA_PERNA = 10.9                                     # as barras do Felipe: MEDIDO
+FEMEA_SOBRA = FEMEA_PERNA - (Z_PCB_FRENTE - Z_FEMEA1)  # quanto a perna passa da face da frente da PCB
+assert FEMEA_PERNA >= FEMEA_PERNA_MIN - 0.005, (FEMEA_PERNA, FEMEA_PERNA_MIN)
 
 # O teclado fica colado na PCB com fita dupla face de espuma (1 a 1,5 mm), que
 # também o separa das soldas das barras, que ficam embaixo dele
@@ -206,22 +212,31 @@ Z_TECLAS = Z_TECLADO + K.espessura
 # Em X e Y (de frente)
 # ---------------------------------------------------------------------------
 CAV_X0, CAV_Y0 = 0.0, 0.0
-FOLGA_TECLADO = 0.5          # de cada lado do teclado, na abertura da frente
-CAV_X1 = K.largura + 2 * FOLGA_TECLADO                 # a largura de dentro: a do teclado
+FOLGA_TECLADO = 0.6          # de cada lado do teclado, na abertura da frente
+CAV_X1 = round(K.largura + 2 * FOLGA_TECLADO, 3)       # a largura de dentro: a do teclado (52,4)
 MEIO_X = (CAV_X0 + CAV_X1) / 2
 FOLGA = 0.3
 
-# O teclado, embaixo. A aba dele fica escondida pelo queixo da frente.
+# O teclado, embaixo. A aba dele fica escondida pelo queixo da frente. Quem fica
+# fixa é a borda de CIMA do corpo: é por ela que se acerta o teclado na hora de
+# colar (tem uma linha na PCB), os botões e a tela contam a partir dela e as
+# soldas das barras da LILYGO (a última em Y 69,3) têm de ficar embaixo dele.
 TECLADO_X0 = MEIO_X - K.largura / 2
-TECLADO_Y0 = 0.7 + K.aba[1]                            # a borda de baixo do corpo
-TECLADO_Y1 = TECLADO_Y0 + K.altura
+TECLADO_Y1 = 70.2                                      # a borda de cima do corpo
+TECLADO_Y0 = round(TECLADO_Y1 - K.altura, 3)           # a borda de baixo do corpo
 ABA_Y = TECLADO_Y0 - K.furos_aba_do_corpo              # a fileira de furos da aba
+assert TECLADO_Y0 - K.aba[1] >= 0.7                    # a aba não encosta na parede de baixo
 JANELA_TECLADO = (CAV_X0, TECLADO_Y0 - 0.8, CAV_X1, TECLADO_Y1 + 1.0)    # a abertura da frente
 
 # Os botões verde e vermelho (chaves tácteis 6×6), entre o teclado e a tela.
 # Ficam perto das bordas: no meio as pernas deles cairiam em cima da pilha.
 BOTAO = 6.0
-CHAVE_TACTIL_ALTURA = 5.0                              # da PCB até o topo do botãozinho (chave 6 × 6 × 5 mm)
+CHAVE_TACTIL_ALTURA = 4.8                              # da PCB até o topo do botãozinho: MEDIDO (a chave "de 5 mm")
+# O botão impresso que vai em cima de cada chave: a base dele tem um recesso onde entra o botãozinho,
+# e uma aba em volta, que fica presa atrás da frente da caixa
+BOTAO_RECESSO = 0.55
+BOTAO_JOGO = 0.3                                       # solto, o botão sobe isto até a aba encostar na frente
+BOTAO_ABA = round(Z_FRENTE_DENTRO - (Z_PCB_FRENTE + CHAVE_TACTIL_ALTURA - BOTAO_RECESSO) - BOTAO_JOGO, 2)
 BOTOES_Y = TECLADO_Y1 + 5.4
 BOTOES_X = (7.0, CAV_X1 - 7.0)                         # verde, vermelho
 
@@ -253,8 +268,9 @@ PCB_Y1 = TELA_PINOS_Y + 2.4
 LINGUA = (9.5, 0.7, CAV_X1 - 9.5, PCB_Y0)              # x0, y0, x1, y1
 
 # Alto-falante 3525 em pé no topo, virado para a grade da parede de cima,
-# embaixo da ponta da tela. A calha aceita até 6 mm de espessura.
-FALANTE = (35.0, 25.0, 6.0)                  # largura (X), altura (Z), espessura máxima (Y)
+# embaixo da ponta da tela. A calha aceita até 6 mm de espessura. A largura
+# (35,1) foi MEDIDA; a altura e a espessura ainda vêm do nome da peça.
+FALANTE = (35.1, 25.0, 6.0)                  # largura (X), altura (Z), espessura máxima (Y)
 FALANTE_X0 = MEIO_X - FALANTE[0] / 2
 FALANTE_AR = 2.0                             # na frente do cone, até a parede (ali descem as linguetas da frente)
 FALANTE_Y = CAV_Y1 - FALANTE_AR - FALANTE[2] - 0.2     # o fundo da calha
@@ -325,28 +341,36 @@ SOLDA_ATRAS = 1.6            # quanto uma perna soldada e cortada pode passar at
 FOLGA_SOLDA_PILHA = 1.0      # e quanto tem de sobrar até a pilha
 
 # ---------------------------------------------------------------------------
-# As medidas para conferir com a peça na mão antes de imprimir e de encomendar
-# (chave, o que medir, o valor do projeto, quanto pode variar, de onde veio)
+# As medidas que só dá para confirmar com a peça na mão
+# (chave, o que medir, o valor do projeto, o que serve, de onde veio o valor).
+# As faixas saem das folgas de cima: quem montar com peças de outra medida
+# troca o valor lá em cima e gera tudo de novo.
 # ---------------------------------------------------------------------------
+MEDIDO_EM = "24/11/2026"
+FALANTE_ALTURA_MAX = math.floor(Z_TELA - FUNDO - 0.5)  # em pé na calha, até quase encostar atrás da tela
+PERNA_MIN_TXT = _mm(math.ceil(FEMEA_PERNA_MIN * 10 - 0.001) / 10)
 MEDIDAS = [
-    ("teclado_largura", "Teclado: largura do corpo preto", f"{_mm(K.largura)} mm", "de 51,0 a 51,8",
-     "anúncio (51,4) e Adafruit (51,0)"),
-    ("teclado_altura", "Teclado: comprimento do corpo preto, sem a aba verde", f"{_mm(K.altura)} mm", "de 63,6 a 64,8",
-     "foto do anúncio (69,3 com a aba)"),
+    ("teclado_largura", "Teclado: largura do corpo preto", f"{_mm(K.largura)} mm",
+     f"de {_mm(CAV_X1 - 1.6)} a {_mm(CAV_X1 - 0.4)}", f"medido em {MEDIDO_EM}"),
+    ("teclado_altura", "Teclado: comprimento do corpo preto, sem a aba verde", f"{_mm(K.altura)} mm",
+     f"de {_mm(K.altura - 0.5)} a {_mm(K.altura + 0.5)}", f"medido em {MEDIDO_EM}"),
     ("teclado_espessura", "Teclado: espessura, de trás até o topo das teclas", f"{_mm(K.espessura)} mm", "até 11",
-     "Adafruit 3845"),
+     f"medido em {MEDIDO_EM}"),
     ("pilha", "LILYGO com a pilha: da face da placa (lado da pilha) até o ponto mais alto da pilha",
-     f"{_mm(L.pilha_altura)} mm, no máximo", f"até {_mm(L.pilha_altura)}", "modelo 3D oficial: de 18,1 a 18,9"),
+     f"{_mm(L.pilha_altura)} mm", f"até {_mm(L.pilha_altura + FOLGA_PILHA / 2)}", f"medido em {MEDIDO_EM}"),
     ("tela_vcc", "Tela: de frente, com os pinos para baixo, o VCC é o pino da esquerda", "sim", "tem de ser sim",
-     "desenho da LCDWiki"),
+     f"desenho da LCDWiki; conferido em {MEDIDO_EM}"),
     ("falante", "Alto-falante: largura × altura × espessura",
-     f"{_mm(FALANTE[0], 0)} × {_mm(FALANTE[1], 0)} × até {_mm(FALANTE[2], 0)} mm", "largura até 35,4; altura até 25,4",
-     "nome da peça (3525)"),
+     f"{_mm(FALANTE[0])} × {_mm(FALANTE[1], 0)} × até {_mm(FALANTE[2], 0)} mm",
+     f"largura até {_mm(FALANTE[0] + 0.2)}; altura até {FALANTE_ALTURA_MAX}; espessura até {_mm(FALANTE[2], 0)}",
+     f"largura medida em {MEDIDO_EM}; altura e espessura pelo nome da peça (3525): FALTA MEDIR"),
     ("chave", "Chave táctil (os botões verde e vermelho): altura, da base até o topo do botãozinho",
-     f"{_mm(CHAVE_TACTIL_ALTURA)} mm", "de 4,5 a 5,2", "tamanho comum (6 × 6 × 5 mm)"),
-    ("perna", "Barra fêmea de perna longa: comprimento da perna", f"{math.ceil(FEMEA_PERNA_MIN)} mm ou mais",
-     f"mínimo {_mm(FEMEA_PERNA_MIN)}", "conta deste projeto"),
+     f"{_mm(CHAVE_TACTIL_ALTURA)} mm", f"de {_mm(CHAVE_TACTIL_ALTURA - 0.3)} a {_mm(CHAVE_TACTIL_ALTURA + BOTAO_JOGO - 0.1)}",
+     f"medido em {MEDIDO_EM}"),
+    ("perna", "Barra fêmea de perna longa: comprimento da perna", f"{_mm(FEMEA_PERNA)} mm",
+     f"{PERNA_MIN_TXT} ou mais", f"medido em {MEDIDO_EM}"),
 ]
+FALTA_MEDIR = ("falante",)                   # das de cima, as que ainda não foram conferidas por inteiro
 
 
 def resumo() -> str:
