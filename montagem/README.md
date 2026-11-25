@@ -26,8 +26,9 @@ alto-falante e o do microfone) e a antena.
 - **O som** sai por três fendas na frente, acima da tela. O alto-falante fica em pé no alto da caixa, virado para a parede
   de cima, num canto fechado por uma parede; o som sobe por trás da ponta da tela.
 - **O USB-C** de carregar aparece num rebaixo da lateral direita, por um furo do tamanho da ponta do cabo.
-- **A frente sai inteira** (duas linguetas em cima, dois parafusos M2 × 8 embaixo) e o conjunto PCB + tela + teclado desencaixa
-  dos pinos para trocar a pilha.
+- **A frente sai inteira** (duas linguetas em cima, dois parafusos de cabeça chata embaixo) e o conjunto PCB + tela + teclado
+  desencaixa dos pinos para trocar a pilha. Os dois parafusos entram por trás em pilares da frente, com furo de 1,75 mm:
+  servem o autoatarraxante de 2,2 × 9,5 mm (DIN 7982) e o M2 × 8.
 - **A chave liga/desliga** da LILYGO fica acessível por trás, numa fenda com ON e OFF gravados.
 
 De trás para a frente (Z, em mm, a partir da face de fora do fundo):

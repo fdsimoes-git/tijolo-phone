@@ -112,7 +112,8 @@ placa mede {mm(PCB_L)} × {mm(PCB_A)} mm e leva escrito **{VERSAO_PCB}**. Com a 
 PETG ou PLA, camada de 0,2 mm, 3 perímetros, 20% de preenchimento, **sem suportes**. A caixa fechada mede
 {mm(LARGURA)} × {mm(COMPRIMENTO)} × {mm(P.Z_TOPO)} mm.
 
-Parafusos: 2 M2 × 8 de cabeça chata fecham a caixa, por trás. Outros 2 M2 × 5 prendem a LILYGO no fundo.
+Parafusos: 2 de cabeça chata fecham a caixa, por trás: autoatarraxantes de 2,2 × 9,5 mm (DIN 7982) ou M2 × 8. Outros
+2 M2 × 5 prendem a LILYGO no fundo.
 """
 
 
