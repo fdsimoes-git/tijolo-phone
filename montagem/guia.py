@@ -817,8 +817,9 @@ sem pinos soltos.</p>
 <code>montagem/fabricar/caixa/</code>. <b>Use este, com a data {P.CAIXA_VERSAO} no nome</b>, e apague os anteriores: eles têm
 as aberturas antigas, e os dois primeiros não servem nas suas peças. O zip leva um LEIA-ME com estas instruções para a gráfica 3D:</p>
 {imprimir}
-<p><b>Material</b>: PETG ou PLA. As linguetas da frente dobram para encaixar, e o PETG aguenta melhor. Camada de 0,2 mm,
-3 perímetros, 20% de preenchimento, <b>sem suportes</b>. Se os cantos do fundo levantarem da mesa, use aba (brim).</p>
+<p><b>Material</b>: PETG ou PLA. As linguetas da frente dobram para encaixar, e o PETG aguenta melhor. Em PLA, os parafusos
+também entram mais apertados nos furos. Camada de 0,2 mm, 3 perímetros, 20% de preenchimento, <b>sem suportes</b>. Se os cantos
+do fundo levantarem da mesa, use aba (brim).</p>
 <p>A caixa fecha com duas linguetas em cima e dois parafusos M2 × 8 embaixo, que entram por trás.</p>
 
 <h2 id="cabos">Cabos e fios</h2>
@@ -843,6 +844,11 @@ as aberturas antigas, e os dois primeiros não servem nas suas peças. O zip lev
   mande a medida dela.</li>
   <li><b>A frente não fecha</b>: confira a espessura da PCB (tem de ser 0,8 mm), a tela assentada nas duas torres e os cabos,
   que não podem ficar em cima dos pilares.</li>
+  <li><b>Um parafuso entra duro demais</b> (acontece mais com a caixa em PLA): não force, porque o pilar pode rachar. Passe
+  uma broca de 1,6 mm no furo, girando com os dedos, e tente de novo.</li>
+  <li><b>Um parafuso gira sem apertar</b>: a rosca do plástico espanou. Troque o parafuso por um autoatarraxante, que tem a
+  rosca mais funda e ainda pega. Nos dois de baixo, que fecham a caixa, também cabe um M2 × 10. Se nem assim firmar, ponha
+  uma lasca de palito de dente no furo e aperte de novo.</li>
   <li><b>A tela fica branca ou sem imagem</b>: confira o firmware (<code>MONTAGEM_PLACA 2</code>) e as soldas dos 9 primeiros
   pinos. Se a imagem aparecer de cabeça para baixo, mude <code>TELA_ROTACAO</code> no <code>config.h</code>.</li>
   <li><b>Uma tecla, ou uma fileira inteira, não responde</b>: é uma perninha da aba do teclado. Refaça a solda e ensine o
