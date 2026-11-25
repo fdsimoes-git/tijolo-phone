@@ -569,9 +569,11 @@ desligada para guardar o Tijolo por muitos dias: ela fica atrás, na fenda com O
   Prenda cada um com um pedacinho de fita por fora, só para não caírem.</li>
   <li>Desça a frente reta sobre o fundo. As duas linguetas de cima entram por dentro da parede e fazem clic. As teclas passam pela
   abertura e a frente cobre a borda do teclado.</li>
-  <li>Aperte os 2 parafusos M2 × 8 por trás, embaixo, sem forçar. Tire as fitas dos botões.</li>
+  <li>Aperte os 2 parafusos M2 × 8 por trás, embaixo, e pare quando a cabeça encostar: apertar além disso espana a rosca no
+  plástico. Tire as fitas dos botões.</li>
 </ol>
-<div class="nota">Para abrir: tire os 2 parafusos, levante a frente por baixo e puxe para soltar as linguetas. Para trocar a
+<div class="nota">Para abrir: tire os 2 parafusos, levante a frente por baixo e puxe para soltar as linguetas. Ao fechar de
+novo, gire cada parafuso primeiro para trás, até sentir que ele caiu na rosca que já existe, e só então aperte. Para trocar a
 pilha, puxe o conjunto da PCB reto para cima: ele desencaixa dos pinos e a LILYGO fica presa no fundo.</div>""",
         ["As linguetas fizeram clic e não sobrou fresta em cima.",
          "Os dois botões fazem clic quando apertados e voltam sozinhos.",
@@ -667,8 +669,10 @@ pilha, puxe o conjunto da PCB reto para cima: ele desencaixa dos pinos e a LILYG
          (f"Chave táctil 6 × 6 mm, com {mm(P.CHAVE_TACTIL_ALTURA)} mm de altura (kit Eletrogate)", "2",
           "<span class='tem'>tem</span>"),
          ("Capacitores: 100 µF e 100 nF (kit Eletrogate)", "1 + 2", "<span class='tem'>tem</span>"),
-         ("Parafusos M2 de cabeça chata: 2 de 8 mm (fechar a caixa) e 2 de 5 mm (prender a LILYGO). Veja se o seu kit "
-          "sortido tem esses comprimentos.", "4", "<span class='tem'>tem</span>"),
+         ("Parafusos M2: 2 de 8 mm, de cabeça chata (fechar a caixa), e 2 de 5 mm (prender a LILYGO). Os do seu kit sortido "
+          "servem se tiverem esses comprimentos. Os <b>autoatarraxantes</b> (rosca grossa, feitos para plástico) seguram "
+          "melhor no plástico impresso e espanam menos; os furos da caixa já servem para eles.", "4",
+          "<span class='tem'>tem</span>"),
          ("Cabo JST SH 1.0 de 2 vias (alto-falante e microfone)", "2", "<span class='tem'>tem</span>"),
          ("Fio 30 AWG (emenda do microfone) e pernas de resistor (aba do teclado)", "um pouco", "<span class='tem'>tem</span>"),
          ("Teclado 3×4, tela 2,4\", alto-falante 3525, microfone 9767, antena 4G, pilha 18650", "", "<span class='tem'>tem</span>")])
