@@ -6,9 +6,10 @@ Junta o que vai para a fábrica de placas e para a gráfica 3D:
 Sai em fabricar/ (esta fica no git: é o que alguém precisa para montar um Tijolo
 sem instalar o KiCad nem o CadQuery) e, em saida/, os dois arquivos de mandar,
 com a versão no nome (a mesma que vem escrita na PCB), para não confundir com
-os de uma versão anterior: tijolo-caixa-3d-v3.zip (os STL, os .step e um
-LEIA-ME para a gráfica 3D) e tijolo-pcb-v3-gerbers-jlcpcb.zip (para a fábrica
-de placas; é uma cópia do saida/placa/tijolo-pcb-gerbers-jlcpcb.zip).
+os de uma versão anterior: tijolo-caixa-3d-2026-11-25.zip (os STL, os .step e
+um LEIA-ME para a gráfica 3D; a data é a P.CAIXA_VERSAO) e
+tijolo-pcb-v3-gerbers-jlcpcb.zip (para a fábrica de placas; é uma cópia do
+saida/placa/tijolo-pcb-gerbers-jlcpcb.zip, com a versão que vem na placa).
 """
 import os
 import re
@@ -25,8 +26,8 @@ GUIA = "https://claude.ai/artifact/CuJ8r7VZzr5Dn8WH7geubx"
 
 with open(os.path.join(AQUI, "placa", "placa.py"), encoding="utf-8") as _f:
     VERSAO_PCB = re.search(r'^VERSAO = "([^"]+)"', _f.read(), re.M).group(1)
-ETIQUETA = VERSAO_PCB.split()[0]             # "v3": vai no nome dos arquivos de mandar
-ZIP_CAIXA = f"tijolo-caixa-3d-{ETIQUETA}.zip"
+ETIQUETA = VERSAO_PCB.split()[0]             # "v3": vai no nome do zip da PCB
+ZIP_CAIXA = f"tijolo-caixa-3d-{P.CAIXA_VERSAO}.zip"
 ZIP_PCB = f"tijolo-pcb-{ETIQUETA}-gerbers-jlcpcb.zip"
 
 LARGURA = P.CAV_X1 - P.CAV_X0 + 2 * P.PAREDE
@@ -119,7 +120,7 @@ def leia_me_da_grafica():
     fundo = medidas_stl(os.path.join(SAIDA, "caixa", "fundo.stl"))
     botao = medidas_stl(os.path.join(SAIDA, "caixa", "botao_verde.stl"))
     return f"""TIJOLO - caixa para imprimir em 3D
-Versão {ETIQUETA}, de {P.MEDIDO_EM}, feita com as medidas das peças: a caixa fechada tem {mm(P.Z_TOPO)} mm de espessura.
+Versão de {P.CAIXA_VERSAO}, feita com as medidas das peças: a caixa fechada tem {mm(P.Z_TOPO)} mm de espessura.
 
 Quatro peças, já viradas do jeito de imprimir:
 

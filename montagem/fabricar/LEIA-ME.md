@@ -17,7 +17,7 @@ com as peças do Felipe:
 | Teclado: espessura, de trás até o topo das teclas | 10,2 mm | até 11 | medido em 24/11/2026 |
 | LILYGO com a pilha: da face da placa (lado da pilha) até o ponto mais alto da pilha | 20,0 mm | até 20,3 | medido em 24/11/2026 |
 | Tela: de frente, com os pinos para baixo, o VCC é o pino da esquerda | sim | tem de ser sim | desenho da LCDWiki; conferido em 24/11/2026 |
-| Alto-falante: largura × altura × espessura | 35,1 × 25 × até 6 mm | largura até 35,3; altura até 28; espessura até 6 | largura medida em 24/11/2026; altura e espessura pelo nome da peça (3525): FALTA MEDIR |
+| Alto-falante: lado comprido × lado curto × espessura | 35,3 × 25 × 6,0 mm | lado comprido até 35,5; lado curto até 28; espessura até 6,2 | lado comprido e espessura medidos em 25/11/2026; o lado curto pelo nome da peça (3525): CONFERIR |
 | Chave táctil (os botões verde e vermelho): altura, da base até o topo do botãozinho | 4,8 mm | de 4,5 a 5,0 | medido em 24/11/2026 |
 | Barra fêmea de perna longa: comprimento da perna | 10,9 mm | 10,9 ou mais | medido em 24/11/2026 |
 

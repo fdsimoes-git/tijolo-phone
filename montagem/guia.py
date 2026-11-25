@@ -291,7 +291,7 @@ def desenho_cabos():
     ux, uy = P.lilygo_para_tijolo(*P.L.ufl_lte)
     p.append(f"<circle class='tracejado' cx='{x(ux):.2f}' cy='{y(uy):.2f}' r='1.6'/>")
     # o alto-falante e o microfone
-    fy0 = P.FALANTE_Y + 0.1
+    fy0 = P.FALANTE_Y + P.FALANTE_FOLGA
     p.append(ret(P.FALANTE_X0, fy0, P.FALANTE_X0 + P.FALANTE[0], fy0 + P.FALANTE[2], "c-som", 0.8))
     p.append(ret(P.MIC_X - P.MIC_D / 2, 0.1, P.MIC_X + P.MIC_D / 2, P.MIC_L, "c-som", 0.8))
     # a chave e o USB-C
@@ -526,8 +526,8 @@ cabos.</p>
   ponta do cabo no conector <b>LTE</b> da LILYGO: fica do lado dos componentes, na ponta do modem. Aperte reto até fazer
   clic.</li>
   <li><b>Alto-falante.</b> O conector que vem nele não serve na LILYGO. Corte o conector e emende os dois fios num cabo JST SH
-  1.0, deixando uns 6 cm no total. Isole as emendas com fita isolante. Ponha o alto-falante em pé na calha de cima, com a
-  frente virada para a grade.</li>
+  1.0, deixando uns 6 cm no total. Isole as emendas com fita isolante. Ponha o alto-falante em pé na calha de cima, apoiado
+  no lado comprido, com a frente virada para a grade. Se ficar frouxo, cole uma tirinha de fita isolante atrás dele.</li>
   <li><b>Microfone.</b> Encaixe um cabo JST SH 1.0 no conector MIC e veja qual fio cai no pino marcado com + na placa. Esse
   fio vai no terminal positivo do microfone: o que <b>não</b> está ligado à carcaça. O outro vai no terminal da carcaça. O
   caminho pede uns 15 cm e o cabo tem 10: emende 6 cm de fio no meio. Deite o microfone no berço de baixo, com a face de feltro
@@ -576,10 +576,11 @@ pilha, puxe o conjunto da PCB reto para cima: ele desencaixa dos pinos e a LILYG
 
     # ------------------------------------------------------------------ as medidas que o Felipe mandou
     falta_falante = "falante" in P.FALTA_MEDIR
-    falta_html = "" if not falta_falante else f"""<div class="aviso"><b>Falta uma medida: a espessura do alto-falante</b> (e a altura).
-O campo do guia só aceitava um número (falha minha) e veio {mm(P.FALANTE[0])}, que eu li como a largura. A calha da caixa aceita até {mm(P.FALANTE[2], 0)} mm de espessura e
-até {P.FALANTE_ALTURA_MAX} mm de altura. Meça antes de imprimir a caixa: se passar disso, eu ajusto a calha. A PCB não depende
-disso e já pode ser encomendada.</div>"""
+    falta_html = "" if not falta_falante else f"""<div class="aviso"><b>Confira antes de imprimir: o lado curto do alto-falante.</b>
+Você mandou {mm(P.FALANTE[0])} mm como altura. Eu li como o lado comprido, o mesmo que antes tinha dado 35,1, e usei o maior dos
+dois. O outro lado, que pelo nome da peça (3525) tem uns {mm(P.FALANTE[1], 0)} mm, eu não tenho medido. O alto-falante fica em pé,
+apoiado no lado comprido, e cabe se o lado curto tiver até {P.FALANTE_ALTURA_MAX} mm. Se o seu tiver uns 35 mm dos dois lados,
+não imprima: me avise, que eu mudo o lugar dele.</div>"""
     suas_medidas = tabela(
         ["O que você mediu", "Sua medida", "O que mudou nos arquivos"],
         [("Teclado: largura do corpo", f"{mm(P.K.largura)} mm",
@@ -595,9 +596,10 @@ disso e já pode ser encomendada.</div>"""
           f"{mm(P.L.pilha_altura - SEM_MEDIR['pilha'])} mm, e a caixa passou de {mm(SEM_MEDIR['espessura'])} para "
           f"{mm(P.Z_TOPO)} mm de espessura. Entre a pilha e a PCB continuam {mm(P.FOLGA_PILHA)} mm de folga.")},
          ("Tela: VCC à esquerda", "sim (você escreveu 1)", "Nada muda."),
-         ("Alto-falante", f"{mm(P.FALANTE[0])} mm (a largura)",
-          f"Na faixa. A calha passou de {mm(SEM_MEDIR['calha'])} para {mm(P.FALANTE[0] + 0.4)} mm."
-          + (" <b>Faltam a altura e a espessura.</b>" if falta_falante else "")),
+         ("Alto-falante: lado comprido e espessura (25/11)", f"{mm(P.FALANTE[0])} e {mm(P.FALANTE[2])} mm",
+          f"Na faixa. A calha ficou com {mm(P.FALANTE[0] + 2 * P.FALANTE_FOLGA)} × {mm(P.FALANTE[2] + 2 * P.FALANTE_FOLGA)} mm: "
+          f"{mm(P.FALANTE_FOLGA)} mm de folga de cada lado."
+          + (" <b>Falta conferir o lado curto.</b>" if falta_falante else "")),
          ("Chave táctil: altura", f"{mm(P.CHAVE_TACTIL_ALTURA)} mm",
           f"Na faixa. A aba do botão impresso passou de {mm(SEM_MEDIR['aba_botao'])} para {mm(aba_botao)} mm, para o botão "
           f"não ficar frouxo."),
@@ -626,10 +628,9 @@ disso e já pode ser encomendada.</div>"""
           f"{mm(P.K.espessura)} mm de espessura",
           "<b>as suas medidas</b> (corpo e espessura); a aba, pela foto com cotas do anúncio"),
          ("Alto-falante e microfone",
-          f"{mm(P.FALANTE[0])} × {mm(P.FALANTE[1], 0)} mm, até {mm(P.FALANTE[2], 0)} de espessura; Ø {mm(P.MIC_D)} × "
-          f"{mm(P.MIC_L)} mm",
-          "a largura do alto-falante é <b>a sua medida</b>; o resto, pelos nomes das peças (3525 e 9767)"
-          + ("; <b>faltam a altura e a espessura</b>" if falta_falante else "")),
+          f"{mm(P.FALANTE[0])} × {mm(P.FALANTE[1], 0)} × {mm(P.FALANTE[2])} mm; Ø {mm(P.MIC_D)} × {mm(P.MIC_L)} mm",
+          "o lado comprido e a espessura do alto-falante são <b>as suas medidas</b>; o resto, pelos nomes das peças (3525 e "
+          "9767)" + ("; <b>falta conferir o lado curto do alto-falante</b>" if falta_falante else "")),
          ("Chaves tácteis e barras fêmea",
           f"chave com {mm(P.CHAVE_TACTIL_ALTURA)} mm de altura; barra com perna de {mm(P.FEMEA_PERNA)} mm e corpo de "
           f"{mm(P.FEMEA_ALTURA)} mm",
@@ -715,7 +716,8 @@ disso e já pode ser encomendada.</div>"""
 </header>
 
 <h2 id="conferir">As suas medidas</h2>
-<p>Refiz a PCB e a caixa com as medidas que você mandou em {P.MEDIDO_EM}. Sete estavam na faixa. A pilha passou: ela chega a
+<p>Refiz a PCB e a caixa com as medidas que você mandou em {P.MEDIDO_EM}, e a calha do alto-falante com as de 25/11. Só a
+pilha estava fora da faixa: ela chega a
 {mm(P.L.pilha_altura)} mm da placa e eu tinha reservado {mm(SEM_MEDIR['pilha'])}. Tudo o que fica acima dela subiu
 {mm(P.L.pilha_altura - SEM_MEDIR['pilha'])} mm.</p>
 {suas_medidas}
@@ -783,10 +785,11 @@ abaixo: apague-o. Na JLCPCB (ou parecida), envie o zip do jeito que está e mude
 sem pinos soltos.</p>
 
 <h2 id="imprimir">Imprimir a caixa</h2>
-<p>Quatro arquivos STL, já virados do jeito de imprimir. Estão no <span class="mono">tijolo-caixa-3d-{ETIQUETA}.zip</span>,
-que mandei na conversa, e no repositório, em <code>montagem/fabricar/caixa/</code>. <b>Use este, com {ETIQUETA} no nome</b>: a
-caixa do zip anterior é {mm(P.Z_TOPO - SEM_MEDIR['espessura'])} mm mais fina e não fecha com a sua pilha. O zip leva um LEIA-ME
-com estas instruções para a gráfica 3D:</p>
+<p>Quatro arquivos STL, já virados do jeito de imprimir. Estão no
+<span class="mono">tijolo-caixa-3d-{P.CAIXA_VERSAO}.zip</span>, que mandei na conversa, e no repositório, em
+<code>montagem/fabricar/caixa/</code>. <b>Use este, com a data {P.CAIXA_VERSAO} no nome</b>, e apague os anteriores: no primeiro, a
+caixa é {mm(P.Z_TOPO - SEM_MEDIR['espessura'])} mm mais fina e não fecha com a sua pilha; no v3, a calha do alto-falante ficou
+justa demais. O zip leva um LEIA-ME com estas instruções para a gráfica 3D:</p>
 {imprimir}
 <p><b>Material</b>: PETG ou PLA. As linguetas da frente dobram para encaixar, e o PETG aguenta melhor. Camada de 0,2 mm,
 3 perímetros, 20% de preenchimento, <b>sem suportes</b>. Se os cantos do fundo levantarem da mesa, use aba (brim).</p>
@@ -841,7 +844,7 @@ com estas instruções para a gráfica 3D:</p>
   <a href="https://www.universal-solder.ca/product/3x4-matrix-keypad-hard-keys-black/">Universal Solder</a> e a foto com cotas
   do anúncio.</li>
   <li>Medidos por você em {P.MEDIDO_EM}: o corpo e a espessura do teclado, a altura da pilha na LILYGO, a chave táctil, a perna
-  das barras fêmea e a largura do alto-falante.</li>
+  das barras fêmea; em 25/11, o lado comprido e a espessura do alto-falante.</li>
 </ul>
 <p class="pequeno">A PCB, a caixa e este guia saem dos scripts da pasta <code>montagem/</code> do repositório (projeto.py,
 placa/placa.py, caixa/caixa.py e guia.py). Mudando uma medida em projeto.py, tudo se refaz igual.</p>

@@ -72,8 +72,8 @@ FOLGA_VIDRO_LADO = 0.6             # em volta do vidro da tela, no rebaixo da fr
 CANAL = 0.9                        # fundura dos canais da parede da direita, por onde descem os USB-C e os QWIIC
 
 # o alto-falante: a calha e as duas torres que seguram a ponta de cima da tela
-CALHA_Y = (P.FALANTE_Y, P.FALANTE_Y + P.FALANTE[2] + 0.2)
-CALHA_X = (P.FALANTE_X0 - 0.2, P.FALANTE_X0 + P.FALANTE[0] + 0.2)
+CALHA_Y = (P.FALANTE_Y, P.FALANTE_Y + P.FALANTE[2] + 2 * P.FALANTE_FOLGA)
+CALHA_X = (P.FALANTE_X0 - P.FALANTE_FOLGA, P.FALANTE_X0 + P.FALANTE[0] + P.FALANTE_FOLGA)
 TORRE_Y = (CALHA_Y[0] + 0.5, CALHA_Y[1] - 0.2)
 
 # a antena do 4G (uma fita de 110,5 × 20 mm) cola na parede da esquerda, por dentro
@@ -465,8 +465,8 @@ def miolo():
     for fx0, fx1 in ((3.0, 17.5), (23.5, 47.5)):
         v.append(("fita de espuma", bloco(fx0, 27.0, P.Z_PCB_FRENTE, fx1, 66.0, zt)))
     # o som
-    v.append(("alto-falante", bloco(P.FALANTE_X0, P.FALANTE_Y + 0.1, P.FUNDO + 0.05, P.FALANTE_X0 + P.FALANTE[0],
-                                    P.FALANTE_Y + 0.1 + P.FALANTE[2], P.FUNDO + 0.05 + P.FALANTE[1])))
+    v.append(("alto-falante", bloco(P.FALANTE_X0, P.FALANTE_Y + P.FALANTE_FOLGA, P.FUNDO + 0.05, P.FALANTE_X0 + P.FALANTE[0],
+                                    P.FALANTE_Y + P.FALANTE_FOLGA + P.FALANTE[2], P.FUNDO + 0.05 + P.FALANTE[1])))
     v.append(("microfone", cilindro_y(P.MIC_X, P.MIC_Z, P.CAV_Y0 + 0.05, P.MIC_L, P.MIC_D)))
     return v
 

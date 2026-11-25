@@ -28,8 +28,9 @@ De onde vêm as medidas:
   - alto-falante e microfone: os nomes das peças (3525 e 9767).
 As que só dá para confirmar com a peça na mão estão em MEDIDAS, no fim. O
 Felipe mediu as peças dele em 24/11/2026: o teclado (51,2 × 63,7 × 10,2), a
-pilha na LILYGO (20,0), a chave táctil (4,8), a perna da barra fêmea (10,9) e
-a largura do alto-falante (35,1). Esses valores já estão aqui.
+pilha na LILYGO (20,0), a chave táctil (4,8) e a perna da barra fêmea (10,9);
+em 25/11, o alto-falante (35,3 no lado comprido e 6,0 de espessura). Esses
+valores já estão aqui.
 """
 import json
 import math
@@ -267,13 +268,15 @@ PCB_Y0 = 5.8                                           # embaixo, nos cantos, fi
 PCB_Y1 = TELA_PINOS_Y + 2.4
 LINGUA = (9.5, 0.7, CAV_X1 - 9.5, PCB_Y0)              # x0, y0, x1, y1
 
-# Alto-falante 3525 em pé no topo, virado para a grade da parede de cima,
-# embaixo da ponta da tela. A calha aceita até 6 mm de espessura. A largura
-# (35,1) foi MEDIDA; a altura e a espessura ainda vêm do nome da peça.
-FALANTE = (35.1, 25.0, 6.0)                  # largura (X), altura (Z), espessura máxima (Y)
+# Alto-falante 3525 em pé no topo, apoiado no lado comprido e virado para a
+# grade da parede de cima, embaixo da ponta da tela. O lado comprido (35,3; numa
+# primeira medida deu 35,1: vale o maior) e a espessura (6,0) foram MEDIDOS; o
+# lado curto (25) ainda vem do nome da peça.
+FALANTE = (35.3, 25.0, 6.0)                  # lado comprido (X), lado curto (Z), espessura (Y)
+FALANTE_FOLGA = 0.2                          # de cada lado do alto-falante, na calha
 FALANTE_X0 = MEIO_X - FALANTE[0] / 2
 FALANTE_AR = 2.0                             # na frente do cone, até a parede (ali descem as linguetas da frente)
-FALANTE_Y = CAV_Y1 - FALANTE_AR - FALANTE[2] - 0.2     # o fundo da calha
+FALANTE_Y = CAV_Y1 - FALANTE_AR - FALANTE[2] - 2 * FALANTE_FOLGA     # o fundo da calha
 # Microfone 9767 (Ø9,7 × 6,7) embaixo, deitado, virado para a parede de baixo
 MIC_D, MIC_L = 9.7, 6.7
 MIC_X, MIC_Z = MEIO_X, 13.0
@@ -347,6 +350,9 @@ FOLGA_SOLDA_PILHA = 1.0      # e quanto tem de sobrar até a pilha
 # troca o valor lá em cima e gera tudo de novo.
 # ---------------------------------------------------------------------------
 MEDIDO_EM = "24/11/2026"
+# A revisão da caixa: vai no nome do zip de mandar imprimir. Muda sempre que muda alguma medida da caixa
+# (a da PCB é a VERSAO de placa/placa.py, que vem escrita na placa).
+CAIXA_VERSAO = "2026-11-25"
 FALANTE_ALTURA_MAX = math.floor(Z_TELA - FUNDO - 0.5)  # em pé na calha, até quase encostar atrás da tela
 PERNA_MIN_TXT = _mm(math.ceil(FEMEA_PERNA_MIN * 10 - 0.001) / 10)
 MEDIDAS = [
@@ -360,10 +366,11 @@ MEDIDAS = [
      f"{_mm(L.pilha_altura)} mm", f"até {_mm(L.pilha_altura + FOLGA_PILHA / 2)}", f"medido em {MEDIDO_EM}"),
     ("tela_vcc", "Tela: de frente, com os pinos para baixo, o VCC é o pino da esquerda", "sim", "tem de ser sim",
      f"desenho da LCDWiki; conferido em {MEDIDO_EM}"),
-    ("falante", "Alto-falante: largura × altura × espessura",
-     f"{_mm(FALANTE[0])} × {_mm(FALANTE[1], 0)} × até {_mm(FALANTE[2], 0)} mm",
-     f"largura até {_mm(FALANTE[0] + 0.2)}; altura até {FALANTE_ALTURA_MAX}; espessura até {_mm(FALANTE[2], 0)}",
-     f"largura medida em {MEDIDO_EM}; altura e espessura pelo nome da peça (3525): FALTA MEDIR"),
+    ("falante", "Alto-falante: lado comprido × lado curto × espessura",
+     f"{_mm(FALANTE[0])} × {_mm(FALANTE[1], 0)} × {_mm(FALANTE[2])} mm",
+     f"lado comprido até {_mm(FALANTE[0] + FALANTE_FOLGA)}; lado curto até {FALANTE_ALTURA_MAX}; "
+     f"espessura até {_mm(FALANTE[2] + FALANTE_FOLGA)}",
+     "lado comprido e espessura medidos em 25/11/2026; o lado curto pelo nome da peça (3525): CONFERIR"),
     ("chave", "Chave táctil (os botões verde e vermelho): altura, da base até o topo do botãozinho",
      f"{_mm(CHAVE_TACTIL_ALTURA)} mm", f"de {_mm(CHAVE_TACTIL_ALTURA - 0.3)} a {_mm(CHAVE_TACTIL_ALTURA + BOTAO_JOGO - 0.1)}",
      f"medido em {MEDIDO_EM}"),
