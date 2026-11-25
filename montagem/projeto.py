@@ -370,7 +370,7 @@ FOLGA_SOLDA_PILHA = 1.0      # e quanto tem de sobrar até a pilha
 MEDIDO_EM = "24/11/2026"
 # A revisão da caixa: vai no nome do zip de mandar imprimir. Muda sempre que muda alguma medida da caixa
 # (a da PCB é a VERSAO de placa/placa.py, que vem escrita na placa).
-CAIXA_VERSAO = "2026-11-25d"
+CAIXA_VERSAO = "2026-11-25c"
 FALANTE_ALTURA_MAX = math.floor(Z_TELA - FUNDO - 0.5)  # em pé na calha, até quase encostar atrás da tela
 PERNA_MIN_TXT = _mm(math.ceil(FEMEA_PERNA_MIN * 10 - 0.001) / 10)
 MEDIDAS = [

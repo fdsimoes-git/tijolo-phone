@@ -60,5 +60,4 @@ placa mede 51,5 × 82,7 mm e leva escrito **v3 · 2026-11**. Com a espessura pad
 PETG ou PLA, camada de 0,2 mm, 3 perímetros, 20% de preenchimento, **sem suportes**. A caixa fechada mede
 56,0 × 161,8 × 35,8 mm.
 
-Parafusos: 2 de cabeça chata fecham a caixa, por trás: autoatarraxantes de 2,2 × 9,5 mm (DIN 7982) ou M2 × 8. Outros
-2 M2 × 5 prendem a LILYGO no fundo.
+Parafusos: 2 M2 × 8 de cabeça chata fecham a caixa, por trás. Outros 2 M2 × 5 prendem a LILYGO no fundo.

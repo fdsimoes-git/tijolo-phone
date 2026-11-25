@@ -27,8 +27,6 @@ ARTIFACT = "https://claude.ai/artifact/CuJ8r7VZzr5Dn8WH7geubx"
 with open(os.path.join(AQUI, "placa", "placa.py"), encoding="utf-8") as _f:
     VERSAO_PCB = re.search(r'^VERSAO = "([^"]+)"', _f.read(), re.M).group(1)
 ETIQUETA = VERSAO_PCB.split()[0]             # "v3": vai no nome dos arquivos mandados na conversa (empacotar.py)
-with open(os.path.join(AQUI, "caixa", "caixa.py"), encoding="utf-8") as _f:
-    FURO_PILAR = float(re.search(r"^PILAR_FURO = ([0-9.]+)", _f.read(), re.M).group(1))   # o furo dos parafusos de baixo
 
 LARGURA = P.CAV_X1 - P.CAV_X0 + 2 * P.PAREDE
 COMPRIMENTO = P.CAV_Y1 - P.CAV_Y0 + 2 * P.PAREDE
@@ -37,10 +35,11 @@ PCB_L, PCB_A = P.PCB_X1 - P.PCB_X0, P.PCB_Y1 - P.LINGUA[1]
 ANTES = dict(espessura=38.17, largura=50.3, comprimento=141.2, fios=19)
 # a versão anterior desta montagem, feita só com as medidas dos fabricantes (antes de o Felipe medir as peças)
 SEM_MEDIR = dict(espessura=35.44, pilha=19.6, teclas=3.36, aba_botao=1.6, calha=35.4, teclado_altura=64.2)
-# onde comprar o parafuso de fechar a caixa (pacote de 100, em estoque em 25/11/2026)
-PARAFUSO_LOJA = "https://projetteparafusos.com.br/parafuso-auto-atarraxante-cabeca-chata-2-2-x-9-5/"
-# o zip da caixa mandado antes deste, e o que mudou dele para este
-CAIXA_ANTERIOR = ("2026-11-25c", "os furos dos dois parafusos de baixo, que eram mais apertados e só serviam para M2")
+# Onde comprar os parafusos M2. O kit autoatarraxante é importado (só vi o título do anúncio); os dois da
+# Projette são nacionais, de rosca de máquina, e estavam em estoque em 25/11/2026.
+PARAFUSO_KIT = "https://www.amazon.com.br/Keadic-Parafusos-Autoatarraxantes-Pequenos-Tamanhos/dp/B09MRRT55V"
+PARAFUSO_M2X8 = "https://projetteparafusos.com.br/parafuso-phillips-cabeca-chata-m2-x-8/"
+PARAFUSO_M2X6 = "https://projetteparafusos.com.br/parafuso-phillips-cabeca-chata-m2-x-6-mm-100-unidades/"
 
 
 def esc(s):
@@ -542,7 +541,8 @@ cabos.</p>
   caminho pede uns 15 cm e o cabo tem 10: emende 6 cm de fio no meio. Deite o microfone no berço de baixo, com a face de feltro
   virada para os três furinhos.</li>
   <li>Ponha a LILYGO no fundo, descendo reto nos dois pinos, e aperte os 2 parafusos M2 × 5 nos outros dois pilares, só até
-  encostar. O cabo da antena dá a volta pela ponta de cima da placa.</li>
+  encostar. Se os parafusos forem de cabeça chata, os de 6 mm também cabem; de cabeça redonda, só os de 5. O cabo da antena dá
+  a volta pela ponta de cima da placa.</li>
   <li>Encaixe os cabos nos conectores <b>SPEK</b> e <b>MIC</b>, do lado da pilha. Os cabos correm pelo vão da esquerda.</li>
   <li>Ponha a chave liga/desliga em <b>ON</b>. Na LILYGO está escrito ON e OFF ao lado dela, do lado da pilha.</li>
 </ol>""",
@@ -575,9 +575,8 @@ desligada para guardar o Tijolo por muitos dias: ela fica atrás, na fenda com O
   Prenda cada um com um pedacinho de fita por fora, só para não caírem.</li>
   <li>Desça a frente reta sobre o fundo. As duas linguetas de cima entram por dentro da parede e fazem clic. As teclas passam pela
   abertura e a frente cobre a borda do teclado.</li>
-  <li>Aperte os 2 parafusos de baixo, por trás, e pare quando a cabeça encostar: apertar além disso espana a rosca no
-  plástico. Use a chave que encaixa sem folga: Phillips nº 1 no autoatarraxante de 2,2, nº 0 no M2. Tire as fitas dos
-  botões.</li>
+  <li>Aperte os 2 parafusos M2 × 8 por trás, embaixo, com a chave Phillips que encaixa sem folga, e pare quando a cabeça
+  encostar: apertar além disso espana a rosca no plástico. Tire as fitas dos botões.</li>
 </ol>
 <div class="nota">Para abrir: tire os 2 parafusos, levante a frente por baixo e puxe para soltar as linguetas. Ao fechar de
 novo, gire cada parafuso primeiro para trás, até sentir que ele caiu na rosca que já existe, e só então aperte. Para trocar a
@@ -676,12 +675,12 @@ pilha, puxe o conjunto da PCB reto para cima: ele desencaixa dos pinos e a LILYG
          (f"Chave táctil 6 × 6 mm, com {mm(P.CHAVE_TACTIL_ALTURA)} mm de altura (kit Eletrogate)", "2",
           "<span class='tem'>tem</span>"),
          ("Capacitores: 100 µF e 100 nF (kit Eletrogate)", "1 + 2", "<span class='tem'>tem</span>"),
-         (f"<b>Parafusos de fechar a caixa</b>, de cabeça chata: autoatarraxantes de <b>2,2 × 9,5 mm</b> (norma DIN 7982, aço "
-          f"zincado). A rosca grossa deles segura mais no plástico impresso. Vêm em pacote de 100, por exemplo na "
-          f"<a href='{PARAFUSO_LOJA}'>Projette Parafusos</a>. Dois M2 × 8 do seu kit sortido também servem: o furo da caixa "
-          f"aceita os dois.", "2", "<span class='comprar'>comprar</span>"),
-         ("Parafusos M2 × 5, de prender a LILYGO: veja se o seu kit sortido tem esse comprimento. Mais compridos não servem, "
-          "porque o furo do pilar não é vazado.", "2", "<span class='tem'>tem</span>"),
+         (f"<b>Parafusos M2 de cabeça chata</b>: 2 de 8 mm (fechar a caixa) e 2 de 5 ou 6 mm (prender a LILYGO). Os melhores "
+          f"para a caixa impressa são os <b>autoatarraxantes</b> (rosca grossa e ponta fina, feitos para plástico): os furos, "
+          f"de 1,6 mm, têm a medida deles. Só achei em kit importado, como <a href='{PARAFUSO_KIT}'>este</a>, com M2 × 5, 6, 8 "
+          f"e 10. Os M2 comuns, de rosca de máquina, também servem, mas entram mais apertados: nacionais, há na Projette o "
+          f"<a href='{PARAFUSO_M2X8}'>M2 × 8</a> e o <a href='{PARAFUSO_M2X6}'>M2 × 6</a>.", "4",
+          "<span class='comprar'>comprar</span>"),
          ("Cabo JST SH 1.0 de 2 vias (alto-falante e microfone)", "2", "<span class='tem'>tem</span>"),
          ("Fio 30 AWG (emenda do microfone) e pernas de resistor (aba do teclado)", "um pouco", "<span class='tem'>tem</span>"),
          ("Teclado 3×4, tela 2,4\", alto-falante 3525, microfone 9767, antena 4G, pilha 18650", "", "<span class='tem'>tem</span>")])
@@ -823,15 +822,14 @@ sem pinos soltos.</p>
 <h2 id="imprimir">Imprimir a caixa</h2>
 <p>Quatro arquivos STL, já virados do jeito de imprimir. Estão no
 <span class="mono">tijolo-caixa-3d-{P.CAIXA_VERSAO}.zip</span>, que mandei na conversa, e no repositório, em
-<code>montagem/fabricar/caixa/</code>. <b>Use este, com a data {P.CAIXA_VERSAO} no nome</b>, e apague os anteriores. Do
-{CAIXA_ANTERIOR[0]} para este só mudou o <span class="mono">frente.stl</span>: {CAIXA_ANTERIOR[1]}. Os mais antigos têm as
-aberturas antigas, e os dois primeiros não servem nas suas peças. O zip leva um LEIA-ME com estas instruções para a gráfica 3D:</p>
+<code>montagem/fabricar/caixa/</code>. <b>O que vale é este, com a data {P.CAIXA_VERSAO} no nome</b>: foi o que você mandou
+imprimir. Apague os outros. Os mais antigos têm as aberturas antigas ou não servem nas suas peças, e o 2026-11-25d só mudava
+os furos dos parafusos de baixo, para um parafuso de 2,2 mm. O zip leva um LEIA-ME com estas instruções para a gráfica 3D:</p>
 {imprimir}
 <p><b>Material</b>: PETG ou PLA. As linguetas da frente dobram para encaixar, e o PETG aguenta melhor. Em PLA, os parafusos
 também entram mais apertados nos furos. Camada de 0,2 mm, 3 perímetros, 20% de preenchimento, <b>sem suportes</b>. Se os cantos
 do fundo levantarem da mesa, use aba (brim).</p>
-<p>A caixa fecha com duas linguetas em cima e dois parafusos de cabeça chata embaixo, que entram por trás: autoatarraxantes
-de 2,2 × 9,5 mm ou M2 × 8. O furo dos pilares tem {mm(FURO_PILAR, 2)} mm e serve os dois.</p>
+<p>A caixa fecha com duas linguetas em cima e dois parafusos M2 × 8 embaixo, que entram por trás.</p>
 
 <h2 id="cabos">Cabos e fios</h2>
 <p>Com a PCB, a tela, os botões e o teclado não usam nenhum fio solto. Sobra isto:</p>
@@ -855,12 +853,11 @@ de 2,2 × 9,5 mm ou M2 × 8. O furo dos pilares tem {mm(FURO_PILAR, 2)} mm e ser
   mande a medida dela.</li>
   <li><b>A frente não fecha</b>: confira a espessura da PCB (tem de ser 0,8 mm), a tela assentada nas duas torres e os cabos,
   que não podem ficar em cima dos pilares.</li>
-  <li><b>Um parafuso entra duro demais</b> (acontece mais com a caixa em PLA): não force, porque o pilar pode rachar. Passe
-  uma broca no furo, girando com os dedos, e tente de novo: de 1,8 mm para o autoatarraxante de 2,2, de 1,6 mm para o
-  M2.</li>
-  <li><b>Um parafuso gira sem apertar</b>: a rosca do plástico espanou. Nos dois de baixo, se era um M2, troque pelo
-  autoatarraxante de 2,2 × 9,5, que é mais grosso e ainda pega (um M2 × 10 também cabe). Se nem assim firmar, ou se for num
-  pilar da LILYGO, ponha uma lasca de palito de dente no furo e aperte de novo.</li>
+  <li><b>Um parafuso entra duro demais</b> (acontece mais com parafuso de rosca de máquina e com a caixa em PLA): não force,
+  porque o pilar pode rachar. Passe uma broca de 1,6 mm no furo, girando com os dedos, e tente de novo.</li>
+  <li><b>Um parafuso gira sem apertar</b>: a rosca do plástico espanou. Troque o parafuso por um autoatarraxante, que tem a
+  rosca mais funda e ainda pega. Nos dois de baixo, que fecham a caixa, também cabe um M2 × 10. Se nem assim firmar, ponha
+  uma lasca de palito de dente no furo e aperte de novo.</li>
   <li><b>A tela fica branca ou sem imagem</b>: confira o firmware (<code>MONTAGEM_PLACA 2</code>) e as soldas dos 9 primeiros
   pinos. Se a imagem aparecer de cabeça para baixo, mude <code>TELA_ROTACAO</code> no <code>config.h</code>.</li>
   <li><b>Uma tecla, ou uma fileira inteira, não responde</b>: é uma perninha da aba do teclado. Refaça a solda e ensine o

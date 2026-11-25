@@ -40,19 +40,14 @@ R_DENTRO = R_FORA - P.PAREDE
 BORDA = 1.0                        # chanfro das quinas da frente e de trás (as duas imprimem viradas para a mesa)
 ZD = P.Z_PCB_FRENTE                # onde a frente encontra o fundo: a face da frente da PCB
 
-# Parafusos de baixo: de cabeça chata, entram por trás (pelo fundo) nos pilares da frente. O furo de 1,75 mm
-# serve dois parafusos: é 0,8 × o diâmetro do autoatarraxante de 2,2 × 9,5 (DIN 7982, o que se acha no Brasil)
-# e fica perto do que o guia de furos do MakerWorld indica para o M2 de rosca de máquina abrir a rosca no
-# plástico (1,70 a 1,74 em PETG; com 1,6 ele entrava mais apertado). O pilar não engrossa: fica a 0,4 mm da
-# parede de baixo do fundo e a 0,8 mm do canto da PCB.
+# Parafusos de baixo: M2 × 8 de cabeça chata, entram por trás (pelo fundo) nos pilares da frente. O furo dos
+# pilares, de 1,6 mm, é o do M2 autoatarraxante (0,8 × o diâmetro); o M2 de rosca de máquina também abre a
+# rosca nele, só que entra mais apertado. A caixa do Felipe foi impressa assim (revisão 2026-11-25c): uma
+# revisão 25d, com furo de 1,75 mm para o autoatarraxante nacional de 2,2 mm, foi desfeita por isso.
 PARAF_X = (4.5, P.CAV_X1 - 4.5)
 PARAF_Y = 2.7
 PILAR_D = 4.6
-PILAR_FURO = 1.75
-PILAR_FUNDURA = 9.0                # o furo vai até 10,7 mm da face de trás: cabem o 2,2 × 9,5 e o M2 × 10
-PILAR_BOCA = (2.4, 0.45)           # a entrada do furo, em cone: o parafuso entra reto e a rebarba não afasta as metades
 PILAR_Z0 = P.FUNDO + 0.2
-assert PARAF_Y - PILAR_D / 2 - P.CAV_Y0 >= 0.39 and P.PCB_Y0 - (PARAF_Y + PILAR_D / 2) >= 0.45, "pilar do parafuso"
 
 # linguetas de cima (frente): descem por dentro da parede de cima, entre ela e a
 # ponta da tela, e o dente entra num rasgo da parede. Ficam na frente das pontas
@@ -362,9 +357,7 @@ def frente():
         # a raiz do pilar, colada na parede de baixo da frente (da aba da borda para cima)
         pilar = pilar.union(bloco(x - PILAR_D / 2, P.CAV_Y0 - 0.1, ZD - DEGRAU["alt"] + 0.15, x + PILAR_D / 2, PARAF_Y,
                                   P.Z_FRENTE_DENTRO + 0.1))
-        boca = (cq.Workplane("XY").workplane(offset=PILAR_Z0 - 0.01).center(x, PARAF_Y)
-                .circle(PILAR_BOCA[0] / 2).workplane(offset=PILAR_BOCA[1]).circle(PILAR_FURO / 2).loft())
-        f = f.union(pilar.cut(cilindro_z(x, PARAF_Y, PILAR_Z0 - 0.1, PILAR_Z0 + PILAR_FUNDURA, PILAR_FURO)).cut(boca))
+        f = f.union(pilar.cut(cilindro_z(x, PARAF_Y, PILAR_Z0 - 0.1, PILAR_Z0 + 9.0, 1.6)))
 
     # linguetas de cima. A raiz é uma nervura colada na parede de cima da frente (da face de dentro
     # até a aba da borda); dali para baixo a lingueta fica solta, a 0,15 mm da parede do fundo, e dobra.
