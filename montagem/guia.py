@@ -581,10 +581,11 @@ pilha, puxe o conjunto da PCB reto para cima: ele desencaixa dos pinos e a LILYG
     falta_falante = "falante" in P.FALTA_MEDIR
     falta = [m for m in P.MEDIDAS if m[0] in P.FALTA_MEDIR]
     falta_html = "" if not falta else (
-        "<div class='aviso'><b>Confira antes de imprimir.</b> A frente agora passa por cima da borda do teclado, e isso depende "
-        "de medidas que eu tirei da ficha e da foto do anúncio, não da sua peça:<ul>"
+        "<div class='nota'><b>Uma medida ainda vem da foto do anúncio</b>, não da sua peça. É ela que centra a abertura nas "
+        "teclas, no sentido do comprimento:<ul>"
         + "".join(f"<li>{esc(oque)}: uso <b>{esc(valor)}</b>; serve {esc(faixa)}.</li>" for _, oque, valor, faixa, _ in falta)
-        + "</ul>Se alguma passar disso, me mande o número, que eu ajusto a abertura.</div>")
+        + "</ul>Dentro dessa faixa a caixa serve do mesmo jeito. Se você medir, eu acerto a abertura para a folga ficar igual "
+        "em cima e embaixo das teclas.</div>")
     suas_medidas = tabela(
         ["O que você mediu", "Sua medida", "O que mudou nos arquivos"],
         [("Teclado: largura do corpo", f"{mm(P.K.largura)} mm",
@@ -594,6 +595,12 @@ pilha, puxe o conjunto da PCB reto para cima: ele desencaixa dos pinos e a LILYG
           f"subiram esse tanto, e a abertura da frente encolheu o mesmo."),
          ("Teclado: espessura", f"{mm(P.K.espessura)} mm",
           f"Na faixa. As teclas passam {mm(P.Z_TECLAS - P.Z_TOPO)} mm da frente da caixa (eram {mm(SEM_MEDIR['teclas'])})."),
+         ("Teclado: altura da aba de fora (25/11)", f"{mm(P.K.base)} mm",
+          f"Na faixa. Sobra {mm(P.FOLGA_ABA_TECLADO)} mm entre a aba e a frente, que passa por cima dela."),
+         ("Teclado: a parte alta, a das teclas (25/11)", f"{mm(P.K.plato_topo[0])} × {mm(P.K.plato_topo[1])} mm",
+          f"Menor do que eu tinha tirado da foto. A abertura das teclas ficou com "
+          f"{mm(P.JANELA_TECLADO[2] - P.JANELA_TECLADO[0])} × {mm(P.JANELA_TECLADO[3] - P.JANELA_TECLADO[1])} mm: "
+          f"{mm(P.JANELA_FOLGA)} mm de folga em volta da parte alta."),
          {"classe": "fora", "celulas": (
           "Pilha na LILYGO: da placa até o topo", f"<b>{mm(P.L.pilha_altura)} mm</b>",
           f"<b>Fora da faixa</b>: eu tinha reservado {mm(SEM_MEDIR['pilha'])}. A PCB, a tela e a frente subiram "

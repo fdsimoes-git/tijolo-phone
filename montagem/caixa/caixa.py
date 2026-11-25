@@ -294,6 +294,11 @@ def frente():
     boca = (caixa_arredondada(jx0 - ch, jy0 - ch, jx1 + ch, jy1 + ch, P.Z_TOPO - ch, P.Z_TOPO + 1, P.JANELA_RAIO + ch)
             .faces("<Z").edges().chamfer(ch - 0.001))
     f = f.cut(boca)
+    # por dentro, um chanfro maior: a parte alta do teclado alarga para baixo, e assim a frente não encosta nela
+    al = P.JANELA_ALIVIO
+    alivio = (caixa_arredondada(jx0 - al, jy0 - al, jx1 + al, jy1 + al, P.Z_FRENTE_DENTRO - 1, P.Z_FRENTE_DENTRO + al,
+                                P.JANELA_RAIO + al).faces(">Z").edges().chamfer(al - 0.001))
+    f = f.cut(alivio)
 
     # a saída do som: fendas na frente, logo acima da ponta da tela, por cima do vão entre a tela e a parede
     # de cima (é por esse vão que o som sobe)
@@ -492,10 +497,15 @@ def miolo():
     kx0, kx1 = P.TECLADO_X0, P.TECLADO_X0 + P.K.largura
     zt = P.Z_TECLADO
     v.append(("teclado (base)", bloco(kx0, P.TECLADO_Y0, zt, kx1, P.TECLADO_Y1, zt + P.K.base)))
-    mx, my = P.K.plato_margem
-    v.append(("teclado (parte crespa)", caixa_arredondada(kx0 + mx, P.TECLADO_Y0 + my, kx1 - mx, P.TECLADO_Y1 - my,
-                                                          zt + P.K.base - 0.01, zt + P.K.plato, 3.0)))
-    yc = (P.TECLADO_Y0 + P.TECLADO_Y1) / 2 - 0.3
+    # a parte alta tem as paredes inclinadas: em degraus, do tamanho de baixo (junto da aba) até o de cima
+    degraus = 6
+    for i in range(degraus):
+        e = P.K.plato_chanfro * (1 - i / degraus)
+        za = zt + P.K.base - 0.01 + i * (P.K.plato - P.K.base) / degraus
+        zb = zt + P.K.base + (i + 1) * (P.K.plato - P.K.base) / degraus
+        v.append(("teclado (parte crespa)", caixa_arredondada(P.PLATO_X[0] - e, P.PLATO_Y[0] - e, P.PLATO_X[1] + e,
+                                                              P.PLATO_Y[1] + e, za, zb, 3.0 + e)))
+    yc = (P.PLATO_Y[0] + P.PLATO_Y[1]) / 2
     for r in range(4):
         for c in range(3):
             x = P.MEIO_X + (c - 1) * P.K.passo[0]

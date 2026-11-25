@@ -89,7 +89,7 @@ em `projeto.py` e gera tudo de novo.
 | Tela | plaquinha 42,72 × 77,18 mm; pinos a 2,00 mm da borda, o 1 (VCC) a 4,85 mm da esquerda; vidro de 10,41 a 70,67 mm; imagem 36,72 × 48,96 mm; soquete do cartão SD atrás, com 3,0 mm de altura | desenho do fabricante ([LCDWiki, MSP2401_Size.pdf](https://www.lcdwiki.com/res/MSP2402/MSP2401_Size.pdf), V1.0 de 15/04/2024) |
 | Teclado | corpo 51,2 × 63,7 mm; aba dos contatos 36,2 × 5,3 mm com 9 furos a 2,54 mm; espessura 10,2 mm | corpo e espessura medidos; a aba, pela foto com cotas do anúncio e pela ficha da [Adafruit 3845](https://www.adafruit.com/product/3845) (o mesmo teclado) |
 | Alto-falante | 35,3 × 25 × 6,0 mm (a calha tem 35,7 × 6,4) | medido |
-| Teclado: aba de fora e parte alta | aba de fora com 3,5 mm de altura; parte alta (a das teclas) com 47,2 × 57,7 mm | ficha da Adafruit 3845 e foto do anúncio: **conferir** |
+| Teclado: aba de fora e parte alta | aba de fora com 3,8 mm de altura; parte alta (a das teclas) com 45,7 × 56,4 mm em cima, a 3,45 mm da borda de cima do corpo | altura e tamanho medidos; a posição, pela foto do anúncio: **conferir** |
 | Microfone | Ø 9,7 × 6,7 mm | nome da peça (9767) |
 | Chaves tácteis | 6 × 6 mm, 4,8 mm de altura (serve de 4,5 a 5,0) | medido |
 | Barras fêmea | perna de 10,9 mm (o mínimo é 10,9: a ponta passa 0,5 mm da PCB); corpo de 8,5 mm | perna medida; o corpo é o tamanho comum |

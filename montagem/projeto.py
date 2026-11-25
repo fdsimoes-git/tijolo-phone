@@ -154,9 +154,13 @@ class Teclado:
     furos_aba: int = 9                       # 9 furos a 2,54 mm; os 7 do meio são os do teclado
     furos_aba_do_corpo: float = 3.2          # da borda do corpo até a fileira de furos
     espessura: float = 10.2                  # de trás até o topo das teclas: MEDIDO (a Adafruit diz 9,7)
-    base: float = 3.5                        # de trás até o topo da aba de fora (onde ficam os 4 furos)
-    plato: float = 5.5                       # de trás até o topo da parte crespa
-    plato_margem: tuple = (2.0, 3.0)         # da borda do corpo até a parte crespa: dos lados, em cima e embaixo (pela foto do anúncio)
+    base: float = 3.8                        # de trás até o topo da aba de fora (onde ficam os 4 furos): MEDIDO
+    plato: float = 5.8                       # de trás até o topo da parte alta (a crespa): a aba mais os 2,0 da ficha da Adafruit
+    # A parte alta, onde ficam as teclas. Em cima ela tem 45,7 × 56,4 (MEDIDO); as paredes dela são
+    # inclinadas, e embaixo, junto da aba, ela tem uns 47,2 × 57,9 (pela foto do anúncio).
+    plato_topo: tuple = (45.7, 56.4)
+    plato_chanfro: float = 0.75
+    plato_cima: float = 3.45                 # da borda de cima do corpo (a oposta à aba) até a quina da parte alta: pela foto
     passo: tuple = (14.25, 13.38)            # entre as teclas: de lado e de cima para baixo
     tecla: float = 7.8                       # o topo da tecla
     furos: tuple = (46.4, 59.7)              # os 4 furos dos cantos (não são usados)
@@ -222,7 +226,7 @@ FOLGA = 0.3
 # fixa é a borda de CIMA do corpo: é por ela que se acerta o teclado na hora de
 # colar (tem uma linha na PCB), os botões e a tela contam a partir dela e as
 # soldas das barras da LILYGO (a última em Y 69,3) têm de ficar embaixo dele.
-TECLADO_X0 = MEIO_X - K.largura / 2
+TECLADO_X0 = round(MEIO_X - K.largura / 2, 3)
 TECLADO_Y1 = 70.2                                      # a borda de cima do corpo
 TECLADO_Y0 = round(TECLADO_Y1 - K.altura, 3)           # a borda de baixo do corpo
 ABA_Y = TECLADO_Y0 - K.furos_aba_do_corpo              # a fileira de furos da aba
@@ -232,8 +236,10 @@ assert TECLADO_Y0 - K.aba[1] >= 0.7                    # a aba não encosta na p
 # é a própria aba, que é preta.
 JANELA_FOLGA = 0.6                                     # em volta da parte alta (o teclado é colado à mão)
 JANELA_RAIO = 3.0                                      # os cantos (a parte alta tem os cantos arredondados)
-JANELA_TECLADO = (round(TECLADO_X0 + K.plato_margem[0] - JANELA_FOLGA, 3), TECLADO_Y0 + K.plato_margem[1] - JANELA_FOLGA,
-                  TECLADO_X0 + K.largura - K.plato_margem[0] + JANELA_FOLGA, TECLADO_Y1 - K.plato_margem[1] + JANELA_FOLGA)
+JANELA_ALIVIO = 0.6                                    # o chanfro de dentro da abertura: a parte alta alarga para baixo
+PLATO_X = (round(MEIO_X - K.plato_topo[0] / 2, 3), round(MEIO_X + K.plato_topo[0] / 2, 3))      # a parte alta, em cima
+PLATO_Y = (round(TECLADO_Y1 - K.plato_cima - K.plato_topo[1], 3), round(TECLADO_Y1 - K.plato_cima, 3))
+JANELA_TECLADO = (PLATO_X[0] - JANELA_FOLGA, PLATO_Y[0] - JANELA_FOLGA, PLATO_X[1] + JANELA_FOLGA, PLATO_Y[1] + JANELA_FOLGA)
 FOLGA_ABA_TECLADO = Z_FRENTE_DENTRO - (Z_TECLADO + K.base)    # entre a aba do teclado e a frente, que passa por cima dela
 assert FOLGA_ABA_TECLADO >= 0.5, FOLGA_ABA_TECLADO
 # O USB-C de carregar e gravar, na parede da direita: por fora, um rebaixo onde entra a capa do cabo; no
@@ -364,7 +370,7 @@ FOLGA_SOLDA_PILHA = 1.0      # e quanto tem de sobrar até a pilha
 MEDIDO_EM = "24/11/2026"
 # A revisão da caixa: vai no nome do zip de mandar imprimir. Muda sempre que muda alguma medida da caixa
 # (a da PCB é a VERSAO de placa/placa.py, que vem escrita na placa).
-CAIXA_VERSAO = "2026-11-25b"
+CAIXA_VERSAO = "2026-11-25c"
 FALANTE_ALTURA_MAX = math.floor(Z_TELA - FUNDO - 0.5)  # em pé na calha, até quase encostar atrás da tela
 PERNA_MIN_TXT = _mm(math.ceil(FEMEA_PERNA_MIN * 10 - 0.001) / 10)
 MEDIDAS = [
@@ -384,18 +390,21 @@ MEDIDAS = [
      f"espessura até {_mm(FALANTE[2] + FALANTE_FOLGA)}",
      "medido em 25/11/2026"),
     ("teclado_aba", "Teclado: altura da aba de fora, a dos 4 furos (de trás do teclado até a face de cima da aba)",
-     f"{_mm(K.base)} mm", f"até {_mm(K.base + FOLGA_ABA_TECLADO - 0.3)}", "ficha da Adafruit 3845: CONFERIR"),
-    ("teclado_plato", "Teclado: a parte alta, onde ficam as teclas: largura × comprimento",
-     f"{_mm(K.largura - 2 * K.plato_margem[0])} × {_mm(K.altura - 2 * K.plato_margem[1])} mm",
-     f"largura até {_mm(K.largura - 2 * K.plato_margem[0] + 2 * JANELA_FOLGA - 0.4)}; comprimento até "
-     f"{_mm(K.altura - 2 * K.plato_margem[1] + 2 * JANELA_FOLGA - 0.4)}", "foto do anúncio: CONFERIR"),
+     f"{_mm(K.base)} mm", f"até {_mm(K.base + FOLGA_ABA_TECLADO - 0.3)}", "medido em 25/11/2026"),
+    ("teclado_plato", "Teclado: a parte alta, onde ficam as teclas, medida em cima: largura × comprimento",
+     f"{_mm(K.plato_topo[0])} × {_mm(K.plato_topo[1])} mm",
+     f"largura de {_mm(K.plato_topo[0] - 0.5)} a {_mm(K.plato_topo[0] + 0.5)}; comprimento de {_mm(K.plato_topo[1] - 0.5)} a "
+     f"{_mm(K.plato_topo[1] + 0.5)}", "medido em 25/11/2026"),
+    ("teclado_plato_pos", "Teclado: da borda de cima do corpo preto (a oposta à aba verde) até a quina da parte alta",
+     f"{_mm(K.plato_cima, 2)} mm", f"de {_mm(K.plato_cima - 0.35, 1)} a {_mm(K.plato_cima + 0.35, 1)}",
+     "foto do anúncio: CONFERIR"),
     ("chave", "Chave táctil (os botões verde e vermelho): altura, da base até o topo do botãozinho",
      f"{_mm(CHAVE_TACTIL_ALTURA)} mm", f"de {_mm(CHAVE_TACTIL_ALTURA - 0.3)} a {_mm(CHAVE_TACTIL_ALTURA + BOTAO_JOGO - 0.1)}",
      f"medido em {MEDIDO_EM}"),
     ("perna", "Barra fêmea de perna longa: comprimento da perna", f"{_mm(FEMEA_PERNA)} mm",
      f"{PERNA_MIN_TXT} ou mais", f"medido em {MEDIDO_EM}"),
 ]
-FALTA_MEDIR = ("teclado_aba", "teclado_plato")    # das de cima, as que ainda não foram conferidas com a peça na mão
+FALTA_MEDIR = ("teclado_plato_pos",)         # das de cima, as que ainda não foram conferidas com a peça na mão
 
 
 def resumo() -> str:
