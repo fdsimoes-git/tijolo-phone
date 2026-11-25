@@ -278,7 +278,7 @@ def montar():
         nets = {str(i + 1): nome for i, nome in enumerate(lista) if nome in usados}
         fp = pl.footprint_lib("Connector_PinSocket_2.54mm", "PinSocket_1x16_P2.54mm_Vertical", barra,
                               "barra fêmea 1×16 de perna longa (empilhável), 2,54 mm",
-                              f"perna de {P.FEMEA_PERNA_MIN:.1f} mm ou mais", x, y, rot=180, atras=True, nets=nets)
+                              f"perna de {P.PERNA_MIN_TXT} mm ou mais", x, y, rot=180, atras=True, nets=nets)
         for item in list(fp.GraphicalItems()):
             if item.GetLayer() in (pcbnew.F_SilkS, pcbnew.B_SilkS):
                 fp.Remove(item)
@@ -336,7 +336,8 @@ def montar():
     for ref, cor, x, gpio in (("SW1", "VERDE", P.BOTOES_X[0], P.GPIO_VERDE), ("SW2", "VERMELHO", P.BOTOES_X[1],
                                                                                  P.GPIO_VERMELHO)):
         fp = pl.footprint_lib("Button_Switch_THT", "SW_PUSH_6mm", ref, f"chave táctil 6×6 mm, 4 pernas ({cor.lower()})",
-                              "5 mm de altura", x - 3.25, P.BOTOES_Y + 2.25, nets={"1": "GND", "2": gpio})
+                              f"{P.CHAVE_TACTIL_ALTURA:.1f} mm de altura".replace(".", ","), x - 3.25, P.BOTOES_Y + 2.25,
+                              nets={"1": "GND", "2": gpio})
         for item in list(fp.GraphicalItems()):
             if item.GetLayer() == pcbnew.F_SilkS:
                 fp.Remove(item)
@@ -363,7 +364,7 @@ def montar():
         pl.retangulo(fx0, FITA_Y[0], fx1, FITA_Y[1], F, 0.12)
         pl.texto("FITA DE ESPUMA", (fx0 + fx1) / 2, (FITA_Y[0] + FITA_Y[1]) / 2, tam=0.9, rot=90)
     # a borda de cima do teclado, na serigrafia: é por ela que se acerta o teclado na hora de colar
-    # (dos lados ele fica rente às bordas da PCB)
+    # (dos lados ele fica centrado na PCB, quase rente às bordas)
     yb = P.TECLADO_Y1 + 0.25
     for bx0, bx1 in ((2.0, 10.6), (25.0, 46.0)):          # sem encostar nos nomes J1 e J2
         pl.linha([(bx0, yb), (bx1, yb)], F, 0.2)
