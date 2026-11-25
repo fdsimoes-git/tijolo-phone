@@ -16,7 +16,8 @@ dente entram nas janelas da parede de cima (clic); embaixo, dois parafusos M2
 entram por trás nos pilares da frente. A LILYGO fica de costas em 4 pilares
 com pino nos furos dela; a PCB encaixa nos pinos da LILYGO e apoia em pilares
 do fundo; a ponta de cima da tela apoia nas duas torres ao lado do
-alto-falante. O teclado aparece inteiro pela abertura de baixo da frente.
+alto-falante. Pela abertura de baixo da frente passam só as teclas: a frente
+cobre a aba de fora do teclado. O som sai por fendas na frente, acima da tela.
 """
 import os
 import sys
@@ -74,7 +75,16 @@ CANAL = 0.9                        # fundura dos canais da parede da direita, po
 # o alto-falante: a calha e as duas torres que seguram a ponta de cima da tela
 CALHA_Y = (P.FALANTE_Y, P.FALANTE_Y + P.FALANTE[2] + 2 * P.FALANTE_FOLGA)
 CALHA_X = (P.FALANTE_X0 - P.FALANTE_FOLGA, P.FALANTE_X0 + P.FALANTE[0] + P.FALANTE_FOLGA)
-TORRE_Y = (CALHA_Y[0] + 0.5, CALHA_Y[1] - 0.2)
+TORRE_Y = (CALHA_Y[0] - 0.05, CALHA_Y[1] - 0.2)
+# O som sai pela frente do Tijolo, por fendas logo acima da ponta da tela (onde vai o ouvido). Uma parede
+# atrás do alto-falante fecha o canto de cima da caixa, para o som não se perder lá dentro.
+PAREDE_SOM = 1.0
+PASSA_CABO = (11.0, 14.5, 2.5)     # o rasgo do cabo do alto-falante nessa parede: x0, x1 e a fundura
+SOM_X = (LING["xs"][0] + LING["larg"] / 2 + 0.7, LING["xs"][1] - LING["larg"] / 2 - 0.7)   # entre as duas linguetas
+SOM_FENDAS, SOM_PONTE = 3, 1.2
+# O USB-C de carregar e gravar: por fora, um rebaixo onde entra a capa do cabo; no fundo dele, uma parede
+# fina com um furo só para a ponta de metal. A boca do conector fica a 0,2 mm dessa parede.
+USB = dict(canal=0.7, mascara=0.4, capa=P.USB_CAPA, ponta=P.USB_FURO)
 
 # a antena do 4G (uma fita de 110,5 × 20 mm) cola na parede da esquerda, por dentro
 ANTENA_Y = (34.0, 145.5)
@@ -163,12 +173,28 @@ def fundo():
     usb_z = P.Z_LILYGO_COMP - P.L.usb_altura / 2
     for yc, abre in ((P.L.usb_esp_y, True), (P.L.usb_modem_y, False)):
         _, y = P.lilygo_para_tijolo(0, yc)
-        f = f.cut(bloco(P.CAV_X1 - 0.1, y - 5.0, usb_z - 2.0, P.CAV_X1 + CANAL, y + 5.0, ZD + 1))
-        if abre:
-            janela = (cq.Workplane("YZ").workplane(offset=P.CAV_X1 - 0.5).center(y, usb_z)
-                      .rect(12.6, 7.0).extrude(P.PAREDE + 1.0).edges("|X").fillet(2.6))
-            f = f.cut(janela)
-            f = f.cut(bloco(P.CAV_X1 - 0.1, y - 6.3 + 2.6, -0.5, X1 + 0.5, y + 6.3 - 2.6, usb_z))   # aberta para trás
+        if not abre:
+            f = f.cut(bloco(P.CAV_X1 - 0.1, y - 5.0, usb_z - 2.0, P.CAV_X1 + CANAL, y + 5.0, ZD + 1))
+            continue
+        # o canal por onde o conector desce: mais raso na altura dele (a parede fina fica logo à frente da boca),
+        # com uma rampa na entrada
+        z_raso = usb_z + USB["capa"][1] / 2 + 0.5
+        f = f.cut(bloco(P.CAV_X1 - 0.1, y - 5.0, usb_z - 2.0, P.CAV_X1 + USB["canal"], y + 5.0, z_raso))
+        f = f.cut(bloco(P.CAV_X1 - 0.1, y - 5.0, z_raso - 0.01, P.CAV_X1 + CANAL, y + 5.0, ZD + 1))
+        dx = CANAL - USB["canal"]
+        rampa = (cq.Workplane("XZ").workplane(offset=-(y - 5.0))
+                 .polyline([(P.CAV_X1 + USB["canal"] - 0.01, z_raso - dx), (P.CAV_X1 + CANAL, z_raso + 0.01),
+                            (P.CAV_X1 + USB["canal"] - 0.01, z_raso + 0.01)]).close().extrude(-10.0))
+        f = f.cut(rampa)
+        # por fora, o rebaixo da capa do cabo (aberto para trás: a capa chega quase até a face de trás)
+        x_masc = P.CAV_X1 + USB["canal"] + USB["mascara"]
+        rebaixo = (cq.Workplane("YZ").workplane(offset=x_masc).center(y, usb_z)
+                   .rect(*USB["capa"]).extrude(X1 - x_masc + 1.0).edges("|X").fillet(2.6))
+        f = f.cut(rebaixo)
+        # e o furo da ponta de metal do cabo
+        furo = (cq.Workplane("YZ").workplane(offset=P.CAV_X1 - 0.5).center(y, usb_z)
+                .rect(*USB["ponta"]).extrude(P.PAREDE + 1.0).edges("|X").fillet(USB["ponta"][1] / 2 - 0.01))
+        f = f.cut(furo)
     # os QWIIC (do lado da pilha) também passam da borda: canal
     _, q0, _, q1 = P.caixa_lilygo(0, P.L.qwiic[0][0], 1, P.L.qwiic[1][1])
     f = f.cut(bloco(P.CAV_X1 - 0.1, q0 - 0.3, P.Z_LILYGO_PILHA - 0.3, P.CAV_X1 + CANAL, q1 + 0.3, ZD + 1))
@@ -195,12 +221,16 @@ def fundo():
         else:
             f = f.union(bloco(xe + 0.2, TORRE_Y[0], P.FUNDO - 0.1, P.CAV_X1 + 0.1, TORRE_Y[1], ZD))
             f = f.union(bloco(xe + 0.2, TORRE_Y[0], ZD - 0.1, P.CAV_X1 - 0.4, TORRE_Y[1], P.Z_TELA - 0.05))
-    # a grade do som na parede de cima
-    n_fendas = 9
-    x_ini = P.MEIO_X - (n_fendas - 1) * 2.6 / 2 - 0.65
-    for i in range(n_fendas):
-        x = x_ini + i * 2.6
-        f = f.cut(caixa_arredondada(x, P.CAV_Y1 - 0.5, x + 1.3, Y1 + 0.5, 5.0, 18.5, 0.6))
+    # A parede de cima não tem mais grade: o som sai pelas fendas da frente (ver frente()). A parede atrás
+    # do alto-falante vai de lado a lado e do fundo até a plaquinha da tela, que apoia nela; dos lados da
+    # tela ela sobe até perto da frente. Assim o som só tem as fendas por onde sair.
+    ya, yb = CALHA_Y[0] - PAREDE_SOM, CALHA_Y[0]
+    f = f.union(bloco(P.CAV_X0 - 0.1, ya, P.FUNDO - 0.1, P.CAV_X1 + 0.1, yb, ZD))
+    f = f.union(bloco(P.CAV_X0 + 0.4, ya, ZD - 0.1, P.CAV_X1 - 0.4, yb, P.Z_TELA - 0.05))
+    for xa, xb in ((P.CAV_X0 + 0.4, P.TELA_X - 0.5), (P.TELA_X + P.T.largura + 0.5, P.CAV_X1 - 0.4)):
+        f = f.union(bloco(xa, ya, P.Z_TELA - 0.1, xb, yb, P.Z_FRENTE_DENTRO - 0.3))
+    # o rasgo por onde passa o cabo do alto-falante (a plaquinha da tela fecha por cima)
+    f = f.cut(bloco(PASSA_CABO[0], ya - 0.1, P.Z_TELA - 0.05 - PASSA_CABO[2], PASSA_CABO[1], yb + 0.1, P.Z_TELA + 0.1))
 
     # berço do microfone (deitado, virado para a parede de baixo) e os furos do som
     mx, mz, md = P.MIC_X, P.MIC_Z, P.MIC_D
@@ -256,9 +286,22 @@ def frente():
     f = f.faces(">Z").edges().chamfer(BORDA)
     f = f.cut(caixa_arredondada(P.CAV_X0, P.CAV_Y0, P.CAV_X1, P.CAV_Y1, ZD - 1, P.Z_FRENTE_DENTRO, R_DENTRO))
 
-    # a abertura do teclado: o teclado inteiro aparece (da largura toda de dentro)
+    # a abertura do teclado: só a parte alta, com as teclas, passa por ela (a frente cobre a aba de fora
+    # do teclado); a boca tem um chanfro por fora
     jx0, jy0, jx1, jy1 = P.JANELA_TECLADO
-    f = f.cut(bloco(jx0, jy0, ZD - 1, jx1, jy1, P.Z_TOPO + 1))
+    f = f.cut(caixa_arredondada(jx0, jy0, jx1, jy1, P.Z_FRENTE_DENTRO - 1, P.Z_TOPO + 1, P.JANELA_RAIO))
+    ch = 0.4
+    boca = (caixa_arredondada(jx0 - ch, jy0 - ch, jx1 + ch, jy1 + ch, P.Z_TOPO - ch, P.Z_TOPO + 1, P.JANELA_RAIO + ch)
+            .faces("<Z").edges().chamfer(ch - 0.001))
+    f = f.cut(boca)
+
+    # a saída do som: fendas na frente, logo acima da ponta da tela, por cima do vão entre a tela e a parede
+    # de cima (é por esse vão que o som sobe)
+    sy0, sy1 = P.TELA_Y1 + 0.25, P.CAV_Y1 - 0.25
+    comp = (SOM_X[1] - SOM_X[0] - (SOM_FENDAS - 1) * SOM_PONTE) / SOM_FENDAS
+    for i in range(SOM_FENDAS):
+        sx0 = SOM_X[0] + i * (comp + SOM_PONTE)
+        f = f.cut(caixa_arredondada(sx0, sy0, sx0 + comp, sy1, P.Z_FRENTE_DENTRO - 1, P.Z_TOPO + 1, (sy1 - sy0) / 2 - 0.01))
 
     # a tela: o vidro entra num rebaixo por dentro e a aba da frente cobre a borda dele;
     # a janela mostra a imagem e um pouco de margem, com chanfro por fora

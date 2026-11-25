@@ -292,6 +292,7 @@ def desenho_cabos():
     p.append(f"<circle class='tracejado' cx='{x(ux):.2f}' cy='{y(uy):.2f}' r='1.6'/>")
     # o alto-falante e o microfone
     fy0 = P.FALANTE_Y + P.FALANTE_FOLGA
+    p.append(ret(P.CAV_X0, P.FALANTE_Y - 1.0, P.CAV_X1, P.FALANTE_Y, "c-caixa2"))      # a parede atrás do alto-falante
     p.append(ret(P.FALANTE_X0, fy0, P.FALANTE_X0 + P.FALANTE[0], fy0 + P.FALANTE[2], "c-som", 0.8))
     p.append(ret(P.MIC_X - P.MIC_D / 2, 0.1, P.MIC_X + P.MIC_D / 2, P.MIC_L, "c-som", 0.8))
     # a chave e o USB-C
@@ -315,7 +316,7 @@ def desenho_cabos():
     # os rótulos, à direita
     xt = mx0 + LARGURA + 5.0
     rotulos = [
-        (fy0 + 3.0, P.FALANTE_X0 + P.FALANTE[0], "alto-falante", "em pé, virado para a grade"),
+        (fy0 + 3.0, P.FALANTE_X0 + P.FALANTE[0], "alto-falante", "em pé; o som sai pela frente"),
         (uy, ux + 1.6, "conector LTE", "na face de baixo da LILYGO"),
         (mcy, qx1, "conector MIC", "microfone"),
         (smy, sx1, "conector SPEK", "alto-falante"),
@@ -527,7 +528,9 @@ cabos.</p>
   clic.</li>
   <li><b>Alto-falante.</b> O conector que vem nele não serve na LILYGO. Corte o conector e emende os dois fios num cabo JST SH
   1.0, deixando uns 6 cm no total. Isole as emendas com fita isolante. Ponha o alto-falante em pé na calha de cima, apoiado
-  no lado comprido, com a frente virada para a grade. Se ficar frouxo, cole uma tirinha de fita isolante atrás dele.</li>
+  no lado comprido, com a frente virada para a parede de cima, e passe o cabo pelo rasgo da parede que fica atrás dele. O som
+  sobe por trás da ponta da tela e sai pelas três fendas da frente. Se o alto-falante ficar frouxo, cole uma tirinha de fita
+  isolante atrás dele.</li>
   <li><b>Microfone.</b> Encaixe um cabo JST SH 1.0 no conector MIC e veja qual fio cai no pino marcado com + na placa. Esse
   fio vai no terminal positivo do microfone: o que <b>não</b> está ligado à carcaça. O outro vai no terminal da carcaça. O
   caminho pede uns 15 cm e o cabo tem 10: emende 6 cm de fio no meio. Deite o microfone no berço de baixo, com a face de feltro
@@ -538,7 +541,7 @@ cabos.</p>
   <li>Ponha a chave liga/desliga em <b>ON</b>. Na LILYGO está escrito ON e OFF ao lado dela, do lado da pilha.</li>
 </ol>""",
         ["A antena está colada na parede e encaixada no conector LTE (não no GNSS).",
-         "O alto-falante está na calha, virado para a grade, e o cabo dele no SPEK.",
+         "O alto-falante está na calha, virado para a parede de cima, com o cabo passando pelo rasgo e encaixado no SPEK.",
          "O fio do + do conector MIC está no terminal do microfone que não toca a carcaça.",
          "Nenhum cabo passa por cima dos pilares nem das torres."]))
 
@@ -564,8 +567,8 @@ desligada para guardar o Tijolo por muitos dias: ela fica atrás, na fenda com O
 <ol class="faz">
   <li>Ponha os dois botões impressos nos poços da frente, por dentro: o verde do lado esquerdo de quem olha o Tijolo de frente.
   Prenda cada um com um pedacinho de fita por fora, só para não caírem.</li>
-  <li>Desça a frente reta sobre o fundo. As duas linguetas de cima entram por dentro da parede e fazem clic. O teclado passa pela
-  abertura.</li>
+  <li>Desça a frente reta sobre o fundo. As duas linguetas de cima entram por dentro da parede e fazem clic. As teclas passam pela
+  abertura e a frente cobre a borda do teclado.</li>
   <li>Aperte os 2 parafusos M2 × 8 por trás, embaixo, sem forçar. Tire as fitas dos botões.</li>
 </ol>
 <div class="nota">Para abrir: tire os 2 parafusos, levante a frente por baixo e puxe para soltar as linguetas. Para trocar a
@@ -576,11 +579,12 @@ pilha, puxe o conjunto da PCB reto para cima: ele desencaixa dos pinos e a LILYG
 
     # ------------------------------------------------------------------ as medidas que o Felipe mandou
     falta_falante = "falante" in P.FALTA_MEDIR
-    falta_html = "" if not falta_falante else f"""<div class="aviso"><b>Confira antes de imprimir: o lado curto do alto-falante.</b>
-Você mandou {mm(P.FALANTE[0])} mm como altura. Eu li como o lado comprido, o mesmo que antes tinha dado 35,1, e usei o maior dos
-dois. O outro lado, que pelo nome da peça (3525) tem uns {mm(P.FALANTE[1], 0)} mm, eu não tenho medido. O alto-falante fica em pé,
-apoiado no lado comprido, e cabe se o lado curto tiver até {P.FALANTE_ALTURA_MAX} mm. Se o seu tiver uns 35 mm dos dois lados,
-não imprima: me avise, que eu mudo o lugar dele.</div>"""
+    falta = [m for m in P.MEDIDAS if m[0] in P.FALTA_MEDIR]
+    falta_html = "" if not falta else (
+        "<div class='aviso'><b>Confira antes de imprimir.</b> A frente agora passa por cima da borda do teclado, e isso depende "
+        "de medidas que eu tirei da ficha e da foto do anúncio, não da sua peça:<ul>"
+        + "".join(f"<li>{esc(oque)}: uso <b>{esc(valor)}</b>; serve {esc(faixa)}.</li>" for _, oque, valor, faixa, _ in falta)
+        + "</ul>Se alguma passar disso, me mande o número, que eu ajusto a abertura.</div>")
     suas_medidas = tabela(
         ["O que você mediu", "Sua medida", "O que mudou nos arquivos"],
         [("Teclado: largura do corpo", f"{mm(P.K.largura)} mm",
@@ -596,10 +600,9 @@ não imprima: me avise, que eu mudo o lugar dele.</div>"""
           f"{mm(P.L.pilha_altura - SEM_MEDIR['pilha'])} mm, e a caixa passou de {mm(SEM_MEDIR['espessura'])} para "
           f"{mm(P.Z_TOPO)} mm de espessura. Entre a pilha e a PCB continuam {mm(P.FOLGA_PILHA)} mm de folga.")},
          ("Tela: VCC à esquerda", "sim (você escreveu 1)", "Nada muda."),
-         ("Alto-falante: lado comprido e espessura (25/11)", f"{mm(P.FALANTE[0])} e {mm(P.FALANTE[2])} mm",
+         ("Alto-falante (25/11)", f"{mm(P.FALANTE[0])} × {mm(P.FALANTE[1], 0)} × {mm(P.FALANTE[2])} mm",
           f"Na faixa. A calha ficou com {mm(P.FALANTE[0] + 2 * P.FALANTE_FOLGA)} × {mm(P.FALANTE[2] + 2 * P.FALANTE_FOLGA)} mm: "
-          f"{mm(P.FALANTE_FOLGA)} mm de folga de cada lado."
-          + (" <b>Falta conferir o lado curto.</b>" if falta_falante else "")),
+          f"{mm(P.FALANTE_FOLGA)} mm de folga de cada lado."),
          ("Chave táctil: altura", f"{mm(P.CHAVE_TACTIL_ALTURA)} mm",
           f"Na faixa. A aba do botão impresso passou de {mm(SEM_MEDIR['aba_botao'])} para {mm(aba_botao)} mm, para o botão "
           f"não ficar frouxo."),
@@ -629,8 +632,7 @@ não imprima: me avise, que eu mudo o lugar dele.</div>"""
           "<b>as suas medidas</b> (corpo e espessura); a aba, pela foto com cotas do anúncio"),
          ("Alto-falante e microfone",
           f"{mm(P.FALANTE[0])} × {mm(P.FALANTE[1], 0)} × {mm(P.FALANTE[2])} mm; Ø {mm(P.MIC_D)} × {mm(P.MIC_L)} mm",
-          "o lado comprido e a espessura do alto-falante são <b>as suas medidas</b>; o resto, pelos nomes das peças (3525 e "
-          "9767)" + ("; <b>falta conferir o lado curto do alto-falante</b>" if falta_falante else "")),
+          "o alto-falante, pelas <b>suas medidas</b>; o microfone, pelo nome da peça (9767)"),
          ("Chaves tácteis e barras fêmea",
           f"chave com {mm(P.CHAVE_TACTIL_ALTURA)} mm de altura; barra com perna de {mm(P.FEMEA_PERNA)} mm e corpo de "
           f"{mm(P.FEMEA_ALTURA)} mm",
@@ -666,9 +668,9 @@ não imprima: me avise, que eu mudo o lugar dele.</div>"""
 
     imprimir = tabela(
         ["Arquivo", "O que é", "Como imprimir"],
-        [("<span class='mono'>fundo.stl</span>", f"a metade de trás ({mm(LARGURA)} × {mm(COMPRIMENTO)} × {mm(P.Z_TELA - 0.05)} mm)",
+        [("<span class='mono'>fundo.stl</span>", f"a metade de trás ({mm(LARGURA)} × {mm(COMPRIMENTO)} × {mm(P.Z_FRENTE_DENTRO - 0.3)} mm)",
           "a face de trás na mesa; sem suporte"),
-         ("<span class='mono'>frente.stl</span>", "a metade da frente, com a janela da tela e a abertura do teclado",
+         ("<span class='mono'>frente.stl</span>", "a metade da frente, com a janela da tela, a abertura das teclas e as fendas do som",
           "a face da frente na mesa (já está virada); sem suporte"),
          ("<span class='mono'>botao_verde.stl</span>", "o botão verde (✓)", "em pé, como está; filamento verde, ou pinte"),
          ("<span class='mono'>botao_vermelho.stl</span>", "o botão vermelho (✕)", "em pé, como está; filamento vermelho, ou pinte")])
@@ -724,6 +726,20 @@ pilha estava fora da faixa: ela chega a
 {falta_html}
 <p>Li o "1" que você escreveu na pergunta da tela como "sim": de frente, com os pinos para baixo, o VCC é o pino da esquerda.
 Se não for isso, me avise antes de encomendar a PCB.</p>
+
+<h3>As aberturas da caixa (25/11)</h3>
+<p>Fechei as aberturas da caixa até onde dá sem atrapalhar o uso. A PCB não mudou.</p>
+<ul>
+  <li><b>Teclado</b>: a frente cobre a aba de fora dele, a dos 4 furos. Pela abertura só passa a parte alta, com as teclas, com
+  {mm(P.JANELA_FOLGA)} mm de folga em volta. Nessa folga aparece a própria aba, que é preta: não dá mais para ver a PCB.</li>
+  <li><b>USB-C</b>: em vez de um rasgo aberto, um rebaixo raso, onde entra a capa do cabo, e no fundo dele um furo de
+  {mm(P.USB_FURO[0])} × {mm(P.USB_FURO[1])} mm, só para a ponta de metal. A boca do conector fica logo atrás do furo.</li>
+  <li><b>Som</b>: a grade da parede de cima saiu. O som sai por três fendas na frente, acima da tela, onde vai o ouvido. O
+  alto-falante continua no mesmo lugar: uma parede atrás dele fecha o canto de cima da caixa, e o som sobe por trás da ponta da
+  tela. Com a saída menor e indireta, o toque e o viva-voz devem ficar um pouco mais baixos do que ficariam com a grade.</li>
+  <li><b>Tela e botões</b>: não mudaram. A frente já cobre a borda do vidro, com {mm(P.FOLGA_VIDRO)} mm de ar para não
+  apertá-lo. Os botões precisam de 0,3 mm de folga para correr, e atrás dessa folga fica a aba do próprio botão.</li>
+</ul>
 
 <h2 id="medidas">As medidas revisadas</h2>
 <p>As medidas vêm dos desenhos dos fabricantes; onde você mediu a peça, vale a sua medida. Três coisas mudaram em relação ao
@@ -787,9 +803,8 @@ sem pinos soltos.</p>
 <h2 id="imprimir">Imprimir a caixa</h2>
 <p>Quatro arquivos STL, já virados do jeito de imprimir. Estão no
 <span class="mono">tijolo-caixa-3d-{P.CAIXA_VERSAO}.zip</span>, que mandei na conversa, e no repositório, em
-<code>montagem/fabricar/caixa/</code>. <b>Use este, com a data {P.CAIXA_VERSAO} no nome</b>, e apague os anteriores: no primeiro, a
-caixa é {mm(P.Z_TOPO - SEM_MEDIR['espessura'])} mm mais fina e não fecha com a sua pilha; no v3, a calha do alto-falante ficou
-justa demais. O zip leva um LEIA-ME com estas instruções para a gráfica 3D:</p>
+<code>montagem/fabricar/caixa/</code>. <b>Use este, com a data {P.CAIXA_VERSAO} no nome</b>, e apague os anteriores: eles têm
+as aberturas antigas, e os dois primeiros não servem nas suas peças. O zip leva um LEIA-ME com estas instruções para a gráfica 3D:</p>
 {imprimir}
 <p><b>Material</b>: PETG ou PLA. As linguetas da frente dobram para encaixar, e o PETG aguenta melhor. Camada de 0,2 mm,
 3 perímetros, 20% de preenchimento, <b>sem suportes</b>. Se os cantos do fundo levantarem da mesa, use aba (brim).</p>
@@ -825,6 +840,8 @@ justa demais. O zip leva um LEIA-ME com estas instruções para a gráfica 3D:</
   fim nos pinos da LILYGO, ou a LILYGO não assentou nos 4 pilares.</li>
   <li><b>Um botão fica sempre apertado</b>: a chave táctil é mais alta que {mm(P.CHAVE_TACTIL_ALTURA + P.BOTAO_JOGO - 0.1)} mm.
   Lixe um pouco a aba do botão impresso, por cima.</li>
+  <li><b>O som saiu baixo ou abafado</b>: confira se a frente do alto-falante está virada para a parede de cima e se a ponta
+  da tela assentou na parede que fica atrás dele. O volume se ajusta com <code>volume 0-7</code> no Monitor Serial.</li>
   <li><b>Sem som, ou ninguém ouve você</b>: os cabos podem estar trocados entre SPEK e MIC. No microfone, confira o lado do
   +.</li>
   <li><b>Sinal fraco</b>: a antena tem de estar no conector LTE. O conector GNSS, ao lado, é do GPS, que a sua placa não

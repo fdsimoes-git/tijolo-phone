@@ -56,7 +56,7 @@ A tela divide o SPI com o cartão TF da placa (IO11/IO12); o firmware deixa o CS
 
 ## Montagem final (PCB e caixa)
 
-Para sair da protoboard: uma PCB encomendada (51,5 × 82,7 mm, 0,8 mm de espessura) encaixa direto nas duas barras de pinos da LILYGO e leva a tela, os botões verde e vermelho e a ligação do teclado 3×4, que entra inteiro. Não sobra fio solto: só os cabos do alto-falante e do microfone e a antena. Uma caixa impressa em 3D (56 × 162 × 36 mm) fecha tudo, com a antena colada por dentro, o alto-falante virado para uma grade em cima e o microfone embaixo.
+Para sair da protoboard: uma PCB encomendada (51,5 × 82,7 mm, 0,8 mm de espessura) encaixa direto nas duas barras de pinos da LILYGO e leva a tela, os botões verde e vermelho e a ligação do teclado 3×4, que entra inteiro. Não sobra fio solto: só os cabos do alto-falante e do microfone e a antena. Uma caixa impressa em 3D (56 × 162 × 36 mm) fecha tudo, com a antena colada por dentro, o alto-falante no alto, com o som saindo por fendas na frente, e o microfone embaixo.
 
 ![O Tijolo montado](montagem/fabricar/tijolo.png)
 

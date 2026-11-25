@@ -21,7 +21,11 @@ alto-falante e o do microfone) e a antena.
 - **A tela** é soldada na PCB pelos próprios pinos, com os pinos para baixo, que é a posição normal dela (rotação 0). Os
   quatro pinos do toque que cairiam em cima da pilha são cortados; no lugar deles a PCB tem furos sem cobre, que escondem os
   toquinhos. A ponta de cima da tela apoia em duas torres do fundo, ao lado do alto-falante.
-- **O teclado** fica colado na PCB com fita dupla face de espuma. A aba dele se liga à PCB por 7 perninhas de fio.
+- **O teclado** fica colado na PCB com fita dupla face de espuma. A aba dos contatos se liga à PCB por 7 perninhas de fio.
+  A frente cobre a aba de fora dele (a dos 4 furos): pela abertura só passa a parte alta, com as teclas.
+- **O som** sai por três fendas na frente, acima da tela. O alto-falante fica em pé no alto da caixa, virado para a parede
+  de cima, num canto fechado por uma parede; o som sobe por trás da ponta da tela.
+- **O USB-C** de carregar aparece num rebaixo da lateral direita, por um furo do tamanho da ponta do cabo.
 - **A frente sai inteira** (duas linguetas em cima, dois parafusos M2 × 8 embaixo) e o conjunto PCB + tela + teclado desencaixa
   dos pinos para trocar a pilha.
 - **A chave liga/desliga** da LILYGO fica acessível por trás, numa fenda com ON e OFF gravados.
@@ -84,7 +88,8 @@ em `projeto.py` e gera tudo de novo.
 | Pilha | topo a 20,0 mm da face da placa, mais 0,6 mm de folga até a PCB | medido (pelo modelo 3D eram de 18,1 a 18,9) |
 | Tela | plaquinha 42,72 × 77,18 mm; pinos a 2,00 mm da borda, o 1 (VCC) a 4,85 mm da esquerda; vidro de 10,41 a 70,67 mm; imagem 36,72 × 48,96 mm; soquete do cartão SD atrás, com 3,0 mm de altura | desenho do fabricante ([LCDWiki, MSP2401_Size.pdf](https://www.lcdwiki.com/res/MSP2402/MSP2401_Size.pdf), V1.0 de 15/04/2024) |
 | Teclado | corpo 51,2 × 63,7 mm; aba dos contatos 36,2 × 5,3 mm com 9 furos a 2,54 mm; espessura 10,2 mm | corpo e espessura medidos; a aba, pela foto com cotas do anúncio e pela ficha da [Adafruit 3845](https://www.adafruit.com/product/3845) (o mesmo teclado) |
-| Alto-falante | 35,3 × 25 × 6,0 mm (a calha tem 35,7 × 6,4) | lado comprido e espessura medidos; o lado curto pelo nome da peça (3525): **conferir** |
+| Alto-falante | 35,3 × 25 × 6,0 mm (a calha tem 35,7 × 6,4) | medido |
+| Teclado: aba de fora e parte alta | aba de fora com 3,5 mm de altura; parte alta (a das teclas) com 47,2 × 57,7 mm | ficha da Adafruit 3845 e foto do anúncio: **conferir** |
 | Microfone | Ø 9,7 × 6,7 mm | nome da peça (9767) |
 | Chaves tácteis | 6 × 6 mm, 4,8 mm de altura (serve de 4,5 a 5,0) | medido |
 | Barras fêmea | perna de 10,9 mm (o mínimo é 10,9: a ponta passa 0,5 mm da PCB); corpo de 8,5 mm | perna medida; o corpo é o tamanho comum |
